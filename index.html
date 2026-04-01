@@ -1085,6 +1085,7 @@ let currentCategory = null;
 let testResults = {};
 let currentUser = null;
 let approvalInterval = null;
+let authRequestId = null;
 
 // ==================== SUPABASE CONNECTION ====================
 async function checkConnection() {
@@ -1782,6 +1783,7 @@ async function sendOTP() {
   const phone = formatPhone(document.getElementById('phoneInput').value);
   const name = document.getElementById('nameInput').value.trim();
   const errEl = document.getElementById('authError');
+  errEl.classList.add('hidden');
 
   if (!phone || phone.length < 10) {
     errEl.textContent = 'ادخل رقم جوال صحيح';
@@ -1794,13 +1796,41 @@ async function sendOTP() {
     return;
   }
 
-  const otp = generateOTP();
-  localStorage.setItem('auth_otp', otp);
-  localStorage.setItem('auth_phone', phone);
-  localStorage.setItem('auth_name', name);
+  // Admin auto-login (bypass OTP)
+  const { data: adminCheck } = await sb.from('approved_users')
+    .select('*').eq('phone', phone).eq('is_admin', true).single();
 
+  if (adminCheck) {
+    currentUser = { phone, name: adminCheck.name || name, is_admin: true };
+    localStorage.setItem('session_user', JSON.stringify(currentUser));
+    await sb.from('approved_users').update({ last_login: new Date().toISOString() }).eq('phone', phone);
+    init();
+    return;
+  }
+
+  // Check if previously approved user
+  const { data: approvedUser } = await sb.from('approved_users')
+    .select('*').eq('phone', phone).eq('is_active', true).single();
+
+  const otp = generateOTP();
+
+  // Store OTP in database (reliable, not localStorage)
+  const { data: req, error: insertErr } = await sb.from('access_requests').insert({
+    phone, name, otp_code: otp, status: approvedUser ? 'approved' : 'pending'
+  }).select().single();
+
+  if (insertErr) {
+    errEl.textContent = 'خطأ: ' + insertErr.message;
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  authRequestId = req.id;
+  localStorage.setItem('auth_request_id', req.id);
+
+  // Send OTP via WhatsApp
   const sent = await sendWhatsApp(phone,
-    `🔑 *رمز التحقق لمنصة اختبار الوكيل العقاري الذكي*\n\nالرمز: *${otp}*\n\nصالح لمدة 5 دقائق.`
+    `🔑 *رمز التحقق لمنصة اختبار الوكيل العقاري الذكي*\n\nالرمز: *${otp}*\n\nصالح لمدة 24 ساعة.\nلا تشاركه مع احد.`
   );
 
   if (sent) {
@@ -1813,53 +1843,66 @@ async function sendOTP() {
 
 async function verifyOTP() {
   const input = document.getElementById('otpInput').value.trim();
-  const stored = localStorage.getItem('auth_otp');
-  const phone = localStorage.getItem('auth_phone');
-  const name = localStorage.getItem('auth_name');
   const errEl = document.getElementById('authError');
+  errEl.classList.add('hidden');
 
-  if (input !== stored) {
+  if (input.length !== 6) {
+    errEl.textContent = 'ادخل الرمز المكون من 6 ارقام';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  const requestId = authRequestId || localStorage.getItem('auth_request_id');
+  if (!requestId) {
+    errEl.textContent = 'انتهت الجلسة، اعد ارسال الرمز';
+    errEl.classList.remove('hidden');
+    showStep(1);
+    return;
+  }
+
+  // Verify OTP from database
+  const { data: req, error } = await sb.from('access_requests')
+    .select('*').eq('id', requestId).single();
+
+  if (error || !req) {
+    errEl.textContent = 'خطأ في التحقق. حاول مرة اخرى.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  if (req.otp_code !== input) {
     errEl.textContent = 'رمز التحقق غير صحيح';
     errEl.classList.remove('hidden');
     return;
   }
 
-  // Check if user is already approved
-  const { data: approved } = await sb.from('approved_users')
-    .select('*').eq('phone', phone).eq('is_active', true).single();
+  // OTP correct - mark verified
+  const sessionToken = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36);
+  await sb.from('access_requests').update({
+    otp_verified: true, session_token: sessionToken
+  }).eq('id', requestId);
 
-  if (approved) {
-    currentUser = { phone, name: approved.name || name };
+  // Check if already approved user
+  if (req.status === 'approved') {
+    currentUser = { phone: req.phone, name: req.name };
     localStorage.setItem('session_user', JSON.stringify(currentUser));
-    await sb.from('approved_users').update({ last_login: new Date().toISOString() }).eq('phone', phone);
+    await sb.from('approved_users').upsert({
+      phone: req.phone, name: req.name, last_login: new Date().toISOString()
+    }, { onConflict: 'phone' });
     init();
     return;
   }
 
-  // Create access request
-  const sessionToken = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36);
-  const { data: request, error } = await sb.from('access_requests').insert({
-    phone, name, otp_verified: true,
-    session_token: sessionToken,
-    status: 'pending'
-  }).select().single();
-
-  if (error) {
-    errEl.textContent = 'خطأ: ' + error.message;
-    errEl.classList.remove('hidden');
-    return;
-  }
-
-  // Notify admin
-  const approveUrl = `${SITE_URL}/admin.html?action=approve&id=${request.id}&token=${sessionToken}`;
-  const rejectUrl = `${SITE_URL}/admin.html?action=reject&id=${request.id}&token=${sessionToken}`;
+  // Need admin approval - send WhatsApp to admin
+  const approveUrl = `${SITE_URL}/admin.html?action=approve&id=${requestId}&token=${sessionToken}`;
+  const rejectUrl = `${SITE_URL}/admin.html?action=reject&id=${requestId}&token=${sessionToken}`;
 
   await sendWhatsApp(ADMIN_PHONE,
-    `🔔 *طلب دخول جديد لمنصة الاختبار*\n\nالاسم: ${name}\nالرقم: ${phone}\n\n✅ قبول:\n${approveUrl}\n\n❌ رفض:\n${rejectUrl}`
+    `🔔 *طلب دخول جديد لمنصة الاختبار*\n\n👤 الاسم: *${req.name}*\n📱 الرقم: ${req.phone}\n🕐 الوقت: ${new Date().toLocaleString('ar-SA')}\n\n✅ للموافقة:\n${approveUrl}\n\n❌ للرفض:\n${rejectUrl}`
   );
 
   showStep(3);
-  startApprovalCheck(request.id, sessionToken, phone, name);
+  startApprovalCheck(requestId, sessionToken, req.phone, req.name);
 }
 
 function startApprovalCheck(requestId, sessionToken, phone, name) {
