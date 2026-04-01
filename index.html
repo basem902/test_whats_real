@@ -1,0 +1,1921 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>الوكيل العقاري الذكي - منصة الاختبار اليدوي</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Tajawal', sans-serif; }
+    .status-pass { background: #dcfce7; color: #166534; border-color: #86efac; }
+    .status-fail { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+    .status-skip { background: #fef9c3; color: #854d0e; border-color: #fde047; }
+    .status-blocked { background: #e0e7ff; color: #3730a3; border-color: #a5b4fc; }
+    .status-pending { background: #f3f4f6; color: #374151; border-color: #d1d5db; }
+    .priority-critical { background: #dc2626; color: white; }
+    .priority-high { background: #ea580c; color: white; }
+    .priority-medium { background: #ca8a04; color: white; }
+    .priority-low { background: #16a34a; color: white; }
+    .category-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.1); }
+    .test-card { transition: all 0.2s; }
+    .test-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .fade-in { animation: fadeIn 0.3s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .progress-bar { transition: width 0.5s ease; }
+    .screenshot-preview { max-height: 200px; object-fit: contain; cursor: pointer; }
+    .modal-overlay { background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
+    @media print {
+      .no-print { display: none !important; }
+      .test-card { break-inside: avoid; page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<!-- ==================== AUTH SCREEN ==================== -->
+<div id="authScreen" class="fixed inset-0 bg-gradient-to-bl from-teal-700 via-teal-600 to-emerald-800 flex items-center justify-center z-50">
+  <div class="bg-white rounded-3xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
+    <div class="bg-gradient-to-l from-teal-600 to-emerald-700 p-6 text-white text-center">
+      <div class="text-4xl mb-2">🏠</div>
+      <h1 class="text-xl font-extrabold">منصة اختبار الوكيل العقاري الذكي</h1>
+      <p class="text-teal-200 text-sm mt-1">تسجيل الدخول مطلوب</p>
+    </div>
+    <div class="p-6">
+      <!-- Step 1: Phone -->
+      <div id="step1">
+        <label class="block text-sm font-bold text-gray-600 mb-2">رقم الجوال</label>
+        <input type="tel" id="phoneInput" placeholder="966XXXXXXXXX" dir="ltr"
+          class="w-full border-2 rounded-xl px-4 py-3 text-center font-bold focus:border-teal-500 focus:outline-none mb-3">
+        <label class="block text-sm font-bold text-gray-600 mb-2">الاسم</label>
+        <input type="text" id="nameInput" placeholder="اسمك الكامل"
+          class="w-full border-2 rounded-xl px-4 py-3 text-center font-bold focus:border-teal-500 focus:outline-none mb-4">
+        <button onclick="sendOTP()" class="w-full bg-teal-600 text-white py-3.5 rounded-xl font-bold text-lg hover:bg-teal-700 transition">
+          ارسال رمز التحقق
+        </button>
+      </div>
+      <!-- Step 2: OTP -->
+      <div id="step2" class="hidden">
+        <label class="block text-sm font-bold text-gray-600 mb-2">رمز التحقق (OTP)</label>
+        <input type="text" id="otpInput" placeholder="000000" dir="ltr" maxlength="6"
+          class="w-full border-2 rounded-xl px-4 py-3 text-center font-bold text-2xl tracking-widest focus:border-teal-500 focus:outline-none mb-4">
+        <button onclick="verifyOTP()" class="w-full bg-teal-600 text-white py-3.5 rounded-xl font-bold text-lg hover:bg-teal-700 transition">
+          تحقق
+        </button>
+        <button onclick="showStep(1)" class="w-full text-gray-400 py-2 text-sm mt-2 hover:text-gray-600">
+          العودة
+        </button>
+      </div>
+      <!-- Step 3: Waiting -->
+      <div id="step3" class="hidden text-center">
+        <div class="text-5xl mb-4 animate-bounce">⏳</div>
+        <h3 class="text-lg font-bold text-gray-800 mb-2">بانتظار موافقة المدير</h3>
+        <p class="text-gray-500 text-sm mb-4">تم ارسال طلب الدخول للمدير عبر واتساب</p>
+        <div class="bg-teal-50 rounded-xl p-4">
+          <p class="text-teal-700 text-sm font-bold">سيتم الدخول تلقائياً عند الموافقة</p>
+        </div>
+      </div>
+      <p id="authError" class="text-red-500 text-sm mt-3 hidden text-center"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SETUP MODAL ==================== -->
+<div id="setupModal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay">
+  <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+    <div class="p-6">
+      <h2 class="text-xl font-bold text-gray-800 mb-4">اعداد بيئة الاختبار</h2>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-bold text-gray-600 mb-1">رابط النظام (Base URL)</label>
+          <input type="url" id="setupUrl" placeholder="https://your-app.vercel.app" dir="ltr"
+            class="w-full border-2 rounded-xl px-4 py-2.5 focus:border-teal-500 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-sm font-bold text-gray-600 mb-1">بيانات الاختبار (اختياري)</label>
+          <textarea id="setupNotes" rows="3" placeholder="اي ملاحظات عامة..."
+            class="w-full border-2 rounded-xl px-4 py-2.5 focus:border-teal-500 focus:outline-none"></textarea>
+        </div>
+      </div>
+      <div class="flex gap-3 mt-6">
+        <button onclick="document.getElementById('setupModal').classList.add('hidden')"
+          class="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-xl font-bold hover:bg-gray-200 transition">إلغاء</button>
+        <button onclick="saveSetup()" class="flex-1 bg-teal-600 text-white py-2.5 rounded-xl font-bold hover:bg-teal-700 transition">حفظ</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== IMAGE MODAL ==================== -->
+<div id="imageModal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay" onclick="this.classList.add('hidden')">
+  <div class="max-w-4xl max-h-[90vh] p-2" onclick="event.stopPropagation()">
+    <img id="imageModalImg" src="" class="max-w-full max-h-[85vh] rounded-xl shadow-2xl">
+    <button onclick="document.getElementById('imageModal').classList.add('hidden')"
+      class="absolute top-4 left-4 bg-white/80 text-gray-800 w-10 h-10 rounded-full flex items-center justify-center text-xl font-bold hover:bg-white transition">×</button>
+  </div>
+</div>
+
+<!-- ==================== MAIN APP ==================== -->
+<div id="mainApp" class="hidden">
+
+  <!-- Header -->
+  <header class="bg-gradient-to-l from-teal-700 via-teal-600 to-emerald-700 text-white shadow-lg no-print">
+    <div class="max-w-6xl mx-auto px-4 py-4">
+      <div class="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 class="text-xl font-extrabold flex items-center gap-2">🏠 منصة اختبار الوكيل العقاري الذكي</h1>
+          <p class="text-teal-200 text-sm">Smart Real Estate Agent Manual Testing</p>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <span id="connStatus" class="text-xs bg-white/10 px-3 py-1 rounded-full"></span>
+          <span id="userBadge" class="text-xs bg-white/20 px-3 py-1 rounded-full"></span>
+          <button onclick="document.getElementById('setupModal').classList.remove('hidden')"
+            class="bg-white/10 px-3 py-1.5 rounded-lg text-sm hover:bg-white/20 transition">⚙️</button>
+          <button onclick="exportReport()" class="bg-white/10 px-3 py-1.5 rounded-lg text-sm hover:bg-white/20 transition">📄 تصدير</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Stats Bar -->
+  <div class="bg-white border-b shadow-sm no-print">
+    <div class="max-w-6xl mx-auto px-4 py-3">
+      <div class="flex items-center justify-between flex-wrap gap-3">
+        <div class="flex items-center gap-4 flex-wrap">
+          <select id="runSelect" onchange="loadRun(this.value)" class="border-2 rounded-xl px-3 py-2 text-sm font-bold focus:border-teal-500 focus:outline-none">
+            <option value="">اختر جولة اختبار...</option>
+          </select>
+          <button onclick="showNewRunModal()" class="bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-teal-700 transition">+ جولة جديدة</button>
+        </div>
+        <div class="flex items-center gap-3 text-sm flex-wrap">
+          <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-green-500 inline-block"></span> نجح: <b id="statPass">0</b></span>
+          <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span> فشل: <b id="statFail">0</b></span>
+          <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-yellow-500 inline-block"></span> تخطي: <b id="statSkip">0</b></span>
+          <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-indigo-500 inline-block"></span> محظور: <b id="statBlocked">0</b></span>
+          <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-gray-400 inline-block"></span> معلق: <b id="statPending">0</b></span>
+          <span class="font-bold text-teal-700">الاجمالي: <b id="statTotal">0</b></span>
+        </div>
+      </div>
+      <!-- Progress Bar -->
+      <div class="mt-3 bg-gray-200 rounded-full h-2.5 overflow-hidden">
+        <div id="progressBar" class="progress-bar h-full rounded-full bg-gradient-to-l from-teal-500 to-emerald-500" style="width: 0%"></div>
+      </div>
+      <div class="text-left text-xs text-gray-400 mt-1"><span id="progressText">0%</span> مكتمل</div>
+    </div>
+  </div>
+
+  <!-- Filter Bar -->
+  <div class="bg-gray-50 border-b no-print">
+    <div class="max-w-6xl mx-auto px-4 py-2">
+      <div class="flex items-center gap-3 flex-wrap">
+        <select id="filterStatus" onchange="applyFilters()" class="border rounded-lg px-3 py-1.5 text-sm focus:border-teal-500 focus:outline-none">
+          <option value="">كل الحالات</option>
+          <option value="pass">نجح ✅</option>
+          <option value="fail">فشل ❌</option>
+          <option value="skip">تخطي ⏭️</option>
+          <option value="blocked">محظور 🚫</option>
+          <option value="pending">معلق ⏳</option>
+        </select>
+        <select id="filterPriority" onchange="applyFilters()" class="border rounded-lg px-3 py-1.5 text-sm focus:border-teal-500 focus:outline-none">
+          <option value="">كل الأولويات</option>
+          <option value="critical">حرج 🔴</option>
+          <option value="high">عالي 🟠</option>
+          <option value="medium">متوسط 🟡</option>
+          <option value="low">منخفض 🟢</option>
+        </select>
+        <select id="filterCategory" onchange="applyFilters()" class="border rounded-lg px-3 py-1.5 text-sm focus:border-teal-500 focus:outline-none">
+          <option value="">كل التصنيفات</option>
+        </select>
+        <input type="text" id="filterSearch" onkeyup="applyFilters()" placeholder="بحث..."
+          class="border rounded-lg px-3 py-1.5 text-sm focus:border-teal-500 focus:outline-none flex-1 min-w-[150px]">
+        <div class="flex gap-1">
+          <button onclick="toggleView('categories')" id="viewCat" class="px-3 py-1.5 rounded-lg text-sm bg-teal-600 text-white font-bold">📁 تصنيفات</button>
+          <button onclick="toggleView('list')" id="viewList" class="px-3 py-1.5 rounded-lg text-sm bg-gray-200 text-gray-700 font-bold">📋 قائمة</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="max-w-6xl mx-auto px-4 py-6">
+    <div id="contentArea"></div>
+  </div>
+</div>
+
+<!-- ==================== NEW RUN MODAL ==================== -->
+<div id="newRunModal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay">
+  <div class="bg-white rounded-2xl shadow-xl max-w-md w-full mx-4">
+    <div class="p-6">
+      <h2 class="text-xl font-bold text-gray-800 mb-4">جولة اختبار جديدة</h2>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-bold text-gray-600 mb-1">اسم الجولة</label>
+          <input type="text" id="runName" placeholder="مثال: اختبار الاصدار 2.0"
+            class="w-full border-2 rounded-xl px-4 py-2.5 focus:border-teal-500 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-sm font-bold text-gray-600 mb-1">البيئة</label>
+          <select id="runEnv" class="w-full border-2 rounded-xl px-4 py-2.5 focus:border-teal-500 focus:outline-none">
+            <option value="production">Production</option>
+            <option value="staging">Staging</option>
+            <option value="development">Development</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-bold text-gray-600 mb-1">ملاحظات</label>
+          <textarea id="runNotes" rows="2" placeholder="ملاحظات عن هذه الجولة..."
+            class="w-full border-2 rounded-xl px-4 py-2.5 focus:border-teal-500 focus:outline-none"></textarea>
+        </div>
+      </div>
+      <div class="flex gap-3 mt-6">
+        <button onclick="document.getElementById('newRunModal').classList.add('hidden')"
+          class="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-xl font-bold hover:bg-gray-200 transition">إلغاء</button>
+        <button onclick="createNewRun()" class="flex-1 bg-teal-600 text-white py-2.5 rounded-xl font-bold hover:bg-teal-700 transition">إنشاء</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==================== CONFIG ====================
+const SUPABASE_URL = 'https://npbqluoqauaftynqfacu.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wYnFsdW9xYXVhZnR5bnFmYWN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNjE2NDUsImV4cCI6MjA5MDYzNzY0NX0.SBkdjjQ7ixe2CcrzNW7gNU5TQDU8DBd1FdcrMFkqT2c';
+const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wYnFsdW9xYXVhZnR5bnFmYWN1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTA2MTY0NSwiZXhwIjoyMDkwNjM3NjQ1fQ.SJxMghigcKaKKVMElDN0Tm3VWvH09iVfVd3WsJaua0E';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+const ADMIN_PHONE = '966544711074';
+const SITE_URL = 'https://basem902.github.io/realestate_test';
+
+// ==================== TEST CASES ====================
+const TEST_CASES = [
+  {
+    id: 'loading',
+    name: 'التحميل والأداء',
+    nameEn: 'Loading & Performance',
+    icon: '🚀',
+    color: 'blue',
+    tests: [
+      { id: 'LOAD-001', title: 'تحميل الصفحة الرئيسية (Landing)', priority: 'critical',
+        steps: ['افتح الرابط الرئيسي للموقع', 'انتظر حتى يكتمل التحميل', 'تحقق من ظهور Hero Section والعناصر التفاعلية'],
+        expected: 'تظهر الصفحة الرئيسية بالكامل مع الصور والنصوص بدون أخطاء' },
+      { id: 'LOAD-002', title: 'سرعة التحميل الأولي', priority: 'critical',
+        steps: ['امسح الكاش (Ctrl+Shift+Delete)', 'افتح الموقع وابدأ العد', 'سجل الوقت حتى ظهور أول شاشة تفاعلية'],
+        expected: 'يحمل الموقع خلال 5 ثوانٍ كحد أقصى' },
+      { id: 'LOAD-003', title: 'تحميل لوحة التحكم (Dashboard)', priority: 'critical',
+        steps: ['سجل دخول بحساب صحيح', 'انتظر تحميل لوحة التحكم', 'تحقق من ظهور الودجات والإحصائيات'],
+        expected: 'تظهر لوحة التحكم مع الودجات بدون شاشة بيضاء' },
+      { id: 'LOAD-004', title: 'التحميل بدون أخطاء Console', priority: 'high',
+        steps: ['افتح DevTools (F12)', 'انتقل لتبويب Console', 'حمّل الموقع من جديد', 'راقب الأخطاء الحمراء'],
+        expected: 'لا توجد أخطاء جافاسكريبت حرجة (fatal errors)' },
+      { id: 'LOAD-005', title: 'أداء الموقع على الجوال', priority: 'high',
+        steps: ['افتح DevTools > Lighthouse', 'شغل تحليل الأداء بوضع الجوال', 'تحقق من النتيجة'],
+        expected: 'نتيجة Performance أعلى من 60' },
+    ]
+  },
+  {
+    id: 'auth',
+    name: 'المصادقة والأمان',
+    nameEn: 'Authentication & Security',
+    icon: '🔐',
+    color: 'purple',
+    tests: [
+      { id: 'AUTH-001', title: 'عرض صفحة تسجيل الدخول', priority: 'critical',
+        steps: ['افتح رابط /login', 'تحقق من ظهور حقول البريد وكلمة المرور'],
+        expected: 'تظهر صفحة تسجيل الدخول بشكل واضح مع حقول الإدخال' },
+      { id: 'AUTH-002', title: 'تسجيل دخول ناجح', priority: 'critical',
+        steps: ['أدخل بريد إلكتروني صحيح', 'أدخل كلمة مرور صحيحة', 'اضغط تسجيل الدخول'],
+        expected: 'يتم الدخول والانتقال للوحة التحكم' },
+      { id: 'AUTH-003', title: 'رفض بيانات خاطئة', priority: 'critical',
+        steps: ['أدخل بريد أو كلمة مرور خاطئة', 'اضغط تسجيل الدخول'],
+        expected: 'يظهر خطأ توضيحي ولا يتم الدخول' },
+      { id: 'AUTH-004', title: 'تسجيل حساب جديد', priority: 'critical',
+        steps: ['افتح /register', 'أدخل بيانات الشركة والبريد وكلمة المرور', 'اضغط إنشاء حساب'],
+        expected: 'يتم إنشاء الحساب والانتقال للوحة التحكم' },
+      { id: 'AUTH-005', title: 'استعادة كلمة المرور', priority: 'high',
+        steps: ['اضغط "نسيت كلمة المرور"', 'أدخل البريد الإلكتروني', 'تحقق من وصول رابط الاستعادة'],
+        expected: 'يتم إرسال رابط استعادة كلمة المرور بنجاح' },
+      { id: 'AUTH-006', title: 'المصادقة الثنائية (2FA)', priority: 'high',
+        steps: ['فعّل 2FA من الإعدادات', 'سجل خروج ثم دخول مرة أخرى', 'تحقق من طلب رمز 2FA'],
+        expected: 'يطلب رمز المصادقة الثنائية عند الدخول' },
+      { id: 'AUTH-007', title: 'انتهاء الجلسة (Session Timeout)', priority: 'high',
+        steps: ['سجل الدخول', 'انتظر فترة بدون نشاط', 'حاول إجراء عملية'],
+        expected: 'يظهر تنبيه انتهاء الجلسة ويعيد توجيه لتسجيل الدخول' },
+      { id: 'AUTH-008', title: 'تسجيل الخروج', priority: 'high',
+        steps: ['من القائمة العلوية اضغط تسجيل الخروج', 'تحقق من العودة لصفحة الدخول'],
+        expected: 'يتم تسجيل الخروج ومسح الجلسة' },
+      { id: 'AUTH-009', title: 'صلاحيات الأدوار (RBAC)', priority: 'critical',
+        steps: ['سجل دخول بحساب مسوق (ليس مدير)', 'حاول الوصول لصفحات الإدارة', 'تحقق من المنع'],
+        expected: 'المسوق لا يستطيع الوصول لصفحات المدير' },
+      { id: 'AUTH-010', title: 'حماية الروابط المباشرة', priority: 'high',
+        steps: ['بدون تسجيل دخول، افتح /dashboard مباشرة', 'تحقق من إعادة التوجيه'],
+        expected: 'يعيد التوجيه لصفحة تسجيل الدخول' },
+    ]
+  },
+  {
+    id: 'dashboard',
+    name: 'لوحة التحكم',
+    nameEn: 'Dashboard',
+    icon: '📊',
+    color: 'teal',
+    tests: [
+      { id: 'DASH-001', title: 'عرض الودجات الإحصائية', priority: 'critical',
+        steps: ['سجل الدخول', 'انتقل للوحة التحكم', 'تحقق من ظهور الودجات (المحادثات، العملاء، العقارات، المواعيد)'],
+        expected: 'تظهر كل الودجات مع أرقام حقيقية' },
+      { id: 'DASH-002', title: 'سحب وإفلات الودجات', priority: 'medium',
+        steps: ['اضغط مع الاستمرار على ودجت', 'اسحبها لموقع آخر', 'حرر الودجت'],
+        expected: 'يتم نقل الودجت للموقع الجديد ويحفظ الترتيب' },
+      { id: 'DASH-003', title: 'ودجت المحادثات الأخيرة', priority: 'high',
+        steps: ['تحقق من ظهور آخر المحادثات', 'اضغط على محادثة', 'تحقق من الانتقال لصفحة المحادثات'],
+        expected: 'تظهر آخر المحادثات ويمكن النقر عليها' },
+      { id: 'DASH-004', title: 'ودجت مواعيد اليوم', priority: 'high',
+        steps: ['تحقق من ظهور مواعيد اليوم', 'تحقق من التفاصيل (العميل، الوقت، العقار)'],
+        expected: 'تظهر مواعيد اليوم مع كل التفاصيل' },
+      { id: 'DASH-005', title: 'ودجت نشاط الذكاء الاصطناعي', priority: 'medium',
+        steps: ['تحقق من ودجت AI Activity', 'تحقق من عرض آخر تفاعلات البوت'],
+        expected: 'يعرض نشاط البوت مع إحصائيات الاستجابة' },
+      { id: 'DASH-006', title: 'ودجت قمع العملاء المحتملين', priority: 'high',
+        steps: ['تحقق من عرض Lead Funnel Widget', 'تحقق من الأرقام لكل مرحلة'],
+        expected: 'يعرض قمع المبيعات مع عدد العملاء في كل مرحلة' },
+      { id: 'DASH-007', title: 'الإجراءات السريعة', priority: 'medium',
+        steps: ['تحقق من ظهور Quick Actions Widget', 'اضغط على إجراء سريع', 'تحقق من الانتقال الصحيح'],
+        expected: 'تعمل الإجراءات السريعة وتنقل للصفحات المطلوبة' },
+      { id: 'DASH-008', title: 'التحديث الفوري للبيانات', priority: 'high',
+        steps: ['افتح لوحة التحكم', 'من جهاز آخر أرسل رسالة واتساب', 'تحقق من تحديث الأرقام'],
+        expected: 'تتحدث الإحصائيات تلقائياً بدون تحديث الصفحة' },
+    ]
+  },
+  {
+    id: 'conversations',
+    name: 'المحادثات والشات',
+    nameEn: 'Conversations & Chat',
+    icon: '💬',
+    color: 'green',
+    tests: [
+      { id: 'CHAT-001', title: 'عرض قائمة المحادثات', priority: 'critical',
+        steps: ['انتقل لـ /dashboard/conversations', 'تحقق من ظهور قائمة المحادثات الجانبية'],
+        expected: 'تظهر قائمة المحادثات مرتبة بالأحدث مع اسم العميل والرسالة الأخيرة' },
+      { id: 'CHAT-002', title: 'عرض محادثة مفردة', priority: 'critical',
+        steps: ['اضغط على محادثة من القائمة', 'تحقق من ظهور فقاعات الرسائل'],
+        expected: 'تظهر الرسائل مع فقاعات ملونة (عميل/بوت/وكيل) والتوقيت' },
+      { id: 'CHAT-003', title: 'البحث في المحادثات', priority: 'high',
+        steps: ['اكتب اسم عميل في حقل البحث', 'تحقق من تصفية النتائج'],
+        expected: 'تظهر المحادثات المطابقة فقط' },
+      { id: 'CHAT-004', title: 'فلترة المحادثات بالحالة', priority: 'high',
+        steps: ['فلتر بـ "نشطة"', 'فلتر بـ "مغلقة"', 'فلتر بـ "تحتاج متابعة"'],
+        expected: 'يتم تصفية المحادثات حسب الحالة المختارة' },
+      { id: 'CHAT-005', title: 'إرسال رسالة يدوية', priority: 'critical',
+        steps: ['افتح محادثة', 'اكتب رسالة في حقل الإرسال', 'اضغط إرسال'],
+        expected: 'يتم إرسال الرسالة وتظهر في المحادثة فوراً' },
+      { id: 'CHAT-006', title: 'عرض الوسائط المرسلة', priority: 'high',
+        steps: ['افتح محادثة تحتوي على صور أو مستندات', 'تحقق من عرض الوسائط'],
+        expected: 'تظهر الصور والمستندات بشكل صحيح مع إمكانية المعاينة' },
+      { id: 'CHAT-007', title: 'تفاصيل العميل من المحادثة', priority: 'medium',
+        steps: ['افتح محادثة', 'اضغط على اسم العميل أو أيقونة المعلومات', 'تحقق من عرض التفاصيل'],
+        expected: 'تظهر تفاصيل العميل (الاسم، الرقم، الحالة، التفضيلات)' },
+      { id: 'CHAT-008', title: 'التبديل بين البوت والوكيل البشري', priority: 'critical',
+        steps: ['افتح محادثة يديرها البوت', 'اضغط "تولي المحادثة"', 'أرسل رسالة يدوية'],
+        expected: 'يتوقف البوت ويبدأ الوكيل البشري بالرد' },
+      { id: 'CHAT-009', title: 'إعادة تفعيل البوت', priority: 'high',
+        steps: ['في محادثة يديرها الوكيل البشري', 'اضغط "إعادة تفعيل البوت"'],
+        expected: 'يعود البوت لإدارة المحادثة تلقائياً' },
+      { id: 'CHAT-010', title: 'إرسال رسالة اختبارية', priority: 'high',
+        steps: ['اضغط زر "اختبار المحادثة"', 'أدخل رقم واتساب', 'أرسل رسالة اختبارية'],
+        expected: 'يتم إرسال رسالة اختبار عبر الواتساب بنجاح' },
+      { id: 'CHAT-011', title: 'عرض حالة واتساب', priority: 'high',
+        steps: ['تحقق من مؤشر حالة الواتساب في الشريط العلوي', 'تحقق من اللون (أخضر=متصل، أحمر=منقطع)'],
+        expected: 'يعرض حالة اتصال الواتساب بدقة' },
+      { id: 'CHAT-012', title: 'الرسائل الصوتية', priority: 'medium',
+        steps: ['أرسل رسالة صوتية عبر الواتساب', 'تحقق من ظهورها في لوحة التحكم', 'تحقق من النص المحول'],
+        expected: 'تظهر الرسالة الصوتية مع النص المحول (Transcription)' },
+    ]
+  },
+  {
+    id: 'ai_bot',
+    name: 'البوت الذكي (AI)',
+    nameEn: 'AI Bot',
+    icon: '🤖',
+    color: 'indigo',
+    tests: [
+      { id: 'AI-001', title: 'رد البوت على تحية', priority: 'critical',
+        steps: ['أرسل "مرحبا" عبر واتساب', 'انتظر رد البوت'],
+        expected: 'يرد البوت بتحية ترحيبية ويسأل عن الاحتياج' },
+      { id: 'AI-002', title: 'بحث عن عقار', priority: 'critical',
+        steps: ['أرسل "أبحث عن شقة في الرياض"', 'انتظر رد البوت', 'تحقق من عرض نتائج العقارات'],
+        expected: 'يعرض البوت عقارات مطابقة مع التفاصيل والأسعار' },
+      { id: 'AI-003', title: 'بحث بمعايير محددة', priority: 'critical',
+        steps: ['أرسل "أريد فيلا 4 غرف بسعر أقل من مليون في جدة"', 'تحقق من تصفية النتائج'],
+        expected: 'يعرض البوت عقارات مطابقة للمعايير المحددة فقط' },
+      { id: 'AI-004', title: 'تصنيف نية العميل', priority: 'high',
+        steps: ['أرسل رسالة استفسار عن سعر', 'أرسل رسالة طلب موعد', 'أرسل رسالة شكوى'],
+        expected: 'يصنف البوت النية بشكل صحيح ويتعامل مع كل نوع' },
+      { id: 'AI-005', title: 'تفاصيل عقار محدد', priority: 'critical',
+        steps: ['اطلب من البوت تفاصيل عقار محدد', 'تحقق من عرض المعلومات الكاملة'],
+        expected: 'يعرض البوت كل تفاصيل العقار (المساحة، الغرف، السعر، الموقع)' },
+      { id: 'AI-006', title: 'حجز موعد معاينة', priority: 'critical',
+        steps: ['أرسل "أريد حجز موعد لمعاينة العقار"', 'تحقق من رد البوت', 'أكد الموعد'],
+        expected: 'ينشئ البوت موعد معاينة ويرسل تأكيد' },
+      { id: 'AI-007', title: 'التصعيد للوكيل البشري', priority: 'critical',
+        steps: ['أرسل "أريد التحدث مع شخص"', 'تحقق من تحويل المحادثة'],
+        expected: 'ينقل البوت المحادثة للوكيل البشري مع إشعار' },
+      { id: 'AI-008', title: 'تحويل الصوت لنص (Whisper)', priority: 'high',
+        steps: ['أرسل رسالة صوتية بالعربية', 'تحقق من فهم البوت للمحتوى'],
+        expected: 'يحول البوت الرسالة الصوتية لنص ويرد بشكل مناسب' },
+      { id: 'AI-009', title: 'الرد الصوتي (TTS)', priority: 'medium',
+        steps: ['اسأل البوت سؤالاً', 'تحقق من إرسال رد صوتي (إن مفعّل)'],
+        expected: 'يرسل البوت رد صوتي واضح بالعربية' },
+      { id: 'AI-010', title: 'قاعدة المعرفة (RAG)', priority: 'high',
+        steps: ['أضف مقال في قاعدة المعرفة', 'اسأل البوت سؤالاً مرتبط بالمقال'],
+        expected: 'يستخدم البوت معلومات المقال في الرد' },
+      { id: 'AI-011', title: 'ساعات العمل', priority: 'high',
+        steps: ['أرسل رسالة خارج ساعات العمل', 'تحقق من رد البوت'],
+        expected: 'يرد البوت برسالة خارج ساعات العمل المحددة' },
+      { id: 'AI-012', title: 'حدود المحادثة', priority: 'high',
+        steps: ['أرسل رسائل كثيرة متتالية', 'تحقق من سلوك البوت'],
+        expected: 'يتعامل البوت مع الحدود (Rate Limiting) بشكل مناسب' },
+      { id: 'AI-013', title: 'رفض محتوى غير مناسب', priority: 'critical',
+        steps: ['أرسل رسالة تحتوي محتوى غير لائق', 'تحقق من رد البوت'],
+        expected: 'يرفض البوت الرد على المحتوى غير المناسب بأدب' },
+      { id: 'AI-014', title: 'تسجيل عميل محتمل جديد', priority: 'critical',
+        steps: ['ابدأ محادثة جديدة عبر واتساب', 'قدم معلومات (الاسم، المدينة، الميزانية)', 'تحقق من إنشاء عميل محتمل في النظام'],
+        expected: 'ينشئ البوت عميل محتمل جديد (Lead) مع كل المعلومات' },
+      { id: 'AI-015', title: 'محادثة متعددة الأدوار', priority: 'high',
+        steps: ['ابدأ محادثة وتبادل عدة رسائل', 'تحقق من تذكر البوت للسياق السابق'],
+        expected: 'يحافظ البوت على سياق المحادثة ولا يعيد الأسئلة' },
+    ]
+  },
+  {
+    id: 'leads',
+    name: 'إدارة العملاء المحتملين',
+    nameEn: 'Lead Management',
+    icon: '👥',
+    color: 'cyan',
+    tests: [
+      { id: 'LEAD-001', title: 'عرض قائمة العملاء المحتملين', priority: 'critical',
+        steps: ['انتقل لـ /dashboard/leads', 'تحقق من ظهور القائمة مع البيانات'],
+        expected: 'تظهر قائمة العملاء المحتملين مع الاسم، الرقم، الحالة، التقييم' },
+      { id: 'LEAD-002', title: 'إضافة عميل محتمل يدوياً', priority: 'high',
+        steps: ['اضغط "إضافة عميل محتمل"', 'أدخل البيانات (الاسم، الرقم، التفضيلات)', 'احفظ'],
+        expected: 'يتم إنشاء العميل المحتمل ويظهر في القائمة' },
+      { id: 'LEAD-003', title: 'تقييم العميل (Lead Scoring)', priority: 'high',
+        steps: ['افتح تفاصيل عميل محتمل', 'تحقق من نقاط التقييم', 'تحقق من معايير التقييم'],
+        expected: 'يظهر تقييم العميل بناءً على تفاعله واهتمامه' },
+      { id: 'LEAD-004', title: 'تغيير حالة العميل', priority: 'critical',
+        steps: ['افتح تفاصيل عميل', 'غيّر الحالة (جديد \u2192 مؤهل \u2192 مهتم \u2192 تم البيع)', 'احفظ'],
+        expected: 'يتم تحديث الحالة ويظهر في المرحلة الجديدة' },
+      { id: 'LEAD-005', title: 'توزيع العملاء على المسوقين', priority: 'high',
+        steps: ['اختر عميل محتمل', 'عيّنه لمسوق محدد', 'تحقق من ظهوره عند المسوق'],
+        expected: 'يتم تعيين العميل للمسوق ويظهر في قائمته' },
+      { id: 'LEAD-006', title: 'البحث والفلترة', priority: 'high',
+        steps: ['ابحث بالاسم أو الرقم', 'فلتر بالحالة', 'فلتر بالمسوق المعيّن'],
+        expected: 'تظهر النتائج المطابقة فقط' },
+      { id: 'LEAD-007', title: 'سجل نشاط العميل', priority: 'medium',
+        steps: ['افتح تفاصيل عميل', 'تحقق من سجل النشاط (رسائل، مواعيد، تغييرات)'],
+        expected: 'يظهر سجل كامل لكل تفاعلات العميل' },
+      { id: 'LEAD-008', title: 'تحويل عميل محتمل لعميل فعلي', priority: 'high',
+        steps: ['افتح عميل محتمل في مرحلة "تم البيع"', 'تحقق من تحويله لعميل فعلي'],
+        expected: 'يتم نقل العميل لقائمة العملاء الفعليين' },
+      { id: 'LEAD-009', title: 'تفضيلات العميل', priority: 'medium',
+        steps: ['افتح تفاصيل عميل', 'تحقق من حفظ تفضيلاته (نوع العقار، المدينة، الميزانية)'],
+        expected: 'تظهر تفضيلات العميل المسجلة من المحادثة' },
+      { id: 'LEAD-010', title: 'تصدير بيانات العملاء', priority: 'medium',
+        steps: ['اضغط "تصدير"', 'اختر الصيغة (CSV/Excel)', 'تحقق من الملف المُصدَّر'],
+        expected: 'يتم تصدير بيانات العملاء بشكل كامل' },
+    ]
+  },
+  {
+    id: 'properties',
+    name: 'إدارة العقارات',
+    nameEn: 'Property Management',
+    icon: '🏠',
+    color: 'emerald',
+    tests: [
+      { id: 'PROP-001', title: 'عرض قائمة العقارات', priority: 'critical',
+        steps: ['انتقل لـ /dashboard/properties', 'تحقق من ظهور بطاقات العقارات مع الصور والأسعار'],
+        expected: 'تظهر العقارات مع صور، أسعار، مواقع، وتفاصيل أساسية' },
+      { id: 'PROP-002', title: 'إضافة عقار جديد', priority: 'critical',
+        steps: ['اضغط "إضافة عقار"', 'أدخل البيانات (العنوان، النوع، السعر، المساحة، الغرف)', 'ارفع صور', 'احفظ'],
+        expected: 'يتم حفظ العقار ويظهر في القائمة' },
+      { id: 'PROP-003', title: 'تعديل بيانات عقار', priority: 'high',
+        steps: ['افتح عقار موجود', 'عدّل السعر أو الوصف', 'احفظ التغييرات'],
+        expected: 'يتم تحديث البيانات بنجاح' },
+      { id: 'PROP-004', title: 'رفع صور العقار', priority: 'critical',
+        steps: ['في نموذج العقار، ارفع صور متعددة', 'تحقق من ظهور المعاينة', 'احفظ'],
+        expected: 'يتم رفع الصور وعرضها في معرض العقار' },
+      { id: 'PROP-005', title: 'رفع مخططات الطوابق', priority: 'high',
+        steps: ['في نموذج العقار، ارفع مخطط طابق', 'تحقق من ظهور المخطط'],
+        expected: 'يتم رفع مخطط الطابق وعرضه بشكل صحيح' },
+      { id: 'PROP-006', title: 'البحث والفلترة', priority: 'critical',
+        steps: ['ابحث باسم العقار', 'فلتر بالنوع (شقة/فيلا/أرض)', 'فلتر بالمدينة والسعر'],
+        expected: 'تظهر النتائج المطابقة للمعايير' },
+      { id: 'PROP-007', title: 'كود العقار التلقائي', priority: 'medium',
+        steps: ['أضف عقار جديد', 'تحقق من توليد كود فريد تلقائياً'],
+        expected: 'يتم توليد كود عقار فريد (مثل PROP-2024-001)' },
+      { id: 'PROP-008', title: 'موقع العقار على الخريطة', priority: 'high',
+        steps: ['افتح تفاصيل عقار', 'تحقق من ظهور الخريطة مع الموقع المحدد'],
+        expected: 'تظهر خريطة Leaflet مع دبوس الموقع' },
+      { id: 'PROP-009', title: 'رمز QR للعقار', priority: 'medium',
+        steps: ['افتح تفاصيل عقار', 'تحقق من ظهور رمز QR', 'امسح الرمز بالجوال'],
+        expected: 'رمز QR يفتح صفحة العقار العامة' },
+      { id: 'PROP-010', title: 'استيراد عقارات من CSV', priority: 'medium',
+        steps: ['اضغط "استيراد"', 'ارفع ملف CSV بتنسيق صحيح', 'تحقق من إضافة العقارات'],
+        expected: 'يتم استيراد العقارات من CSV بنجاح' },
+      { id: 'PROP-011', title: 'حذف عقار', priority: 'high',
+        steps: ['اختر عقار', 'اضغط حذف', 'أكد الحذف'],
+        expected: 'يتم حذف العقار من القائمة' },
+      { id: 'PROP-012', title: 'مميزات العقار (Features)', priority: 'high',
+        steps: ['في نموذج العقار، أضف مميزات (مسبح، حديقة، مصعد)', 'احفظ', 'تحقق من ظهورها'],
+        expected: 'تظهر مميزات العقار في التفاصيل وعند بحث البوت' },
+    ]
+  },
+  {
+    id: 'appointments',
+    name: 'المواعيد',
+    nameEn: 'Appointments',
+    icon: '📅',
+    color: 'violet',
+    tests: [
+      { id: 'APPT-001', title: 'عرض قائمة المواعيد', priority: 'critical',
+        steps: ['انتقل لـ /dashboard/appointments', 'تحقق من ظهور المواعيد'],
+        expected: 'تظهر المواعيد مع العميل، العقار، الوقت، الحالة' },
+      { id: 'APPT-002', title: 'إضافة موعد جديد', priority: 'critical',
+        steps: ['اضغط "إضافة موعد"', 'اختر العميل والعقار والتاريخ', 'احفظ'],
+        expected: 'يتم إنشاء الموعد ويظهر في القائمة' },
+      { id: 'APPT-003', title: 'تعديل موعد', priority: 'high',
+        steps: ['افتح موعد موجود', 'غيّر التاريخ أو الملاحظات', 'احفظ'],
+        expected: 'يتم تحديث الموعد بنجاح' },
+      { id: 'APPT-004', title: 'إلغاء موعد', priority: 'high',
+        steps: ['افتح موعد', 'اضغط "إلغاء"', 'أكد الإلغاء'],
+        expected: 'يتم إلغاء الموعد وتحديث الحالة' },
+      { id: 'APPT-005', title: 'تذكيرات المواعيد', priority: 'high',
+        steps: ['أنشئ موعد قريب', 'تحقق من إرسال تذكير واتساب للعميل'],
+        expected: 'يتم إرسال تذكير تلقائي عبر الواتساب' },
+      { id: 'APPT-006', title: 'فلترة المواعيد', priority: 'medium',
+        steps: ['فلتر بالتاريخ', 'فلتر بالحالة (مؤكد/ملغي/مكتمل)', 'فلتر بالمسوق'],
+        expected: 'تظهر المواعيد المطابقة للفلتر' },
+      { id: 'APPT-007', title: 'تقييم الموعد', priority: 'medium',
+        steps: ['بعد اكتمال موعد', 'أضف تقييم ونتيجة المعاينة', 'احفظ'],
+        expected: 'يتم حفظ التقييم مع الموعد' },
+      { id: 'APPT-008', title: 'الموعد من البوت', priority: 'critical',
+        steps: ['اطلب من البوت حجز موعد عبر واتساب', 'تحقق من ظهور الموعد في لوحة التحكم'],
+        expected: 'الموعد المحجوز من البوت يظهر في النظام بكل التفاصيل' },
+    ]
+  },
+  {
+    id: 'team',
+    name: 'فريق العمل',
+    nameEn: 'Team Management',
+    icon: '👔',
+    color: 'orange',
+    tests: [
+      { id: 'TEAM-001', title: 'عرض قائمة الفريق', priority: 'high',
+        steps: ['انتقل لـ /dashboard/team', 'تحقق من ظهور أعضاء الفريق'],
+        expected: 'تظهر قائمة الأعضاء مع الأدوار والحالة' },
+      { id: 'TEAM-002', title: 'دعوة عضو جديد', priority: 'critical',
+        steps: ['اضغط "دعوة عضو"', 'أدخل البريد والدور', 'أرسل الدعوة'],
+        expected: 'يتم إرسال دعوة بريدية ويظهر العضو في القائمة' },
+      { id: 'TEAM-003', title: 'تعديل دور عضو', priority: 'high',
+        steps: ['افتح تفاصيل عضو', 'غيّر الدور (مدير/مسوق/مشرف)', 'احفظ'],
+        expected: 'يتم تحديث صلاحيات العضو حسب الدور الجديد' },
+      { id: 'TEAM-004', title: 'تعطيل حساب عضو', priority: 'high',
+        steps: ['افتح تفاصيل عضو', 'اضغط "تعطيل"', 'تحقق من عدم قدرته على الدخول'],
+        expected: 'يتم تعطيل الحساب ومنع الدخول' },
+      { id: 'TEAM-005', title: 'أداء الفريق', priority: 'medium',
+        steps: ['انتقل لـ /dashboard/team-performance', 'تحقق من إحصائيات كل مسوق'],
+        expected: 'تظهر مؤشرات الأداء (المحادثات، التحويلات، المواعيد)' },
+      { id: 'TEAM-006', title: 'صلاحيات الأدوار', priority: 'critical',
+        steps: ['سجل بحساب مسوق', 'تحقق من الصفحات المتاحة', 'حاول الوصول لصفحات المدير'],
+        expected: 'كل دور يرى الصفحات المصرح بها فقط' },
+      { id: 'TEAM-007', title: 'تسجيل مسوق عبر واتساب', priority: 'high',
+        steps: ['أرسل رسالة تسجيل مسوق عبر واتساب', 'أكمل خطوات التسجيل', 'تحقق من ظهوره في الفريق'],
+        expected: 'يتم تسجيل المسوق عبر واتساب ويظهر في القائمة' },
+      { id: 'TEAM-008', title: 'التوزيع التلقائي للعملاء', priority: 'high',
+        steps: ['اختبر وصول عميل جديد عبر واتساب', 'تحقق من توزيعه تلقائياً على مسوق'],
+        expected: 'يتم توزيع العملاء الجدد تلقائياً على المسوقين النشطين' },
+    ]
+  },
+  {
+    id: 'bot_settings',
+    name: 'إعدادات البوت',
+    nameEn: 'Bot Settings',
+    icon: '⚙️',
+    color: 'gray',
+    tests: [
+      { id: 'BOT-001', title: 'صفحة إعدادات البوت', priority: 'high',
+        steps: ['انتقل لـ /dashboard/bot-settings', 'تحقق من ظهور كل الإعدادات'],
+        expected: 'تظهر إعدادات البوت مع القيم الحالية' },
+      { id: 'BOT-002', title: 'تعديل رسالة الترحيب', priority: 'high',
+        steps: ['عدّل رسالة الترحيب', 'احفظ', 'أرسل رسالة واتساب جديدة', 'تحقق من الرسالة المعدلة'],
+        expected: 'البوت يستخدم رسالة الترحيب الجديدة' },
+      { id: 'BOT-003', title: 'ساعات العمل', priority: 'high',
+        steps: ['حدد ساعات العمل', 'حدد رسالة خارج العمل', 'احفظ'],
+        expected: 'البوت يتبع ساعات العمل المحددة' },
+      { id: 'BOT-004', title: 'تفعيل/تعطيل البوت', priority: 'critical',
+        steps: ['عطّل البوت من الإعدادات', 'أرسل رسالة واتساب', 'فعّل البوت مرة أخرى'],
+        expected: 'البوت لا يرد عند التعطيل ويعود عند التفعيل' },
+      { id: 'BOT-005', title: 'حدود المحادثات', priority: 'high',
+        steps: ['حدد حد أقصى للرسائل في المحادثة', 'احفظ', 'اختبر الحد'],
+        expected: 'البوت يتوقف عند الوصول للحد المحدد' },
+      { id: 'BOT-006', title: 'قواعد التصعيد', priority: 'high',
+        steps: ['حدد قواعد التصعيد (كلمات معينة، عدم الرد)', 'احفظ', 'اختبر'],
+        expected: 'يتم التصعيد للوكيل البشري وفق القواعد المحددة' },
+      { id: 'BOT-007', title: 'إعدادات اللغة', priority: 'medium',
+        steps: ['غيّر لغة البوت', 'اختبر الردود'],
+        expected: 'البوت يرد باللغة المحددة' },
+      { id: 'BOT-008', title: 'شخصية البوت', priority: 'medium',
+        steps: ['عدّل نبرة البوت (رسمي/ودود)', 'اختبر الردود'],
+        expected: 'أسلوب البوت يتغير حسب الشخصية المحددة' },
+      { id: 'BOT-009', title: 'إعدادات الصوت', priority: 'medium',
+        steps: ['فعّل/عطّل الرد الصوتي', 'فعّل/عطّل تحويل الصوت لنص', 'اختبر'],
+        expected: 'إعدادات الصوت تعمل كما هو متوقع' },
+      { id: 'BOT-010', title: 'الرسائل التلقائية عند عدم الرد', priority: 'high',
+        steps: ['حدد رسالة تلقائية بعد فترة عدم رد', 'اختبر بعدم الرد لفترة'],
+        expected: 'يرسل البوت رسالة متابعة تلقائية' },
+    ]
+  },
+  {
+    id: 'auto_responses',
+    name: 'الردود التلقائية',
+    nameEn: 'Auto Responses',
+    icon: '💡',
+    color: 'amber',
+    tests: [
+      { id: 'AUTO-001', title: 'عرض الردود التلقائية', priority: 'high',
+        steps: ['انتقل لـ /dashboard/auto-responses', 'تحقق من ظهور القوالب'],
+        expected: 'تظهر قائمة الردود التلقائية مع الكلمات المفتاحية' },
+      { id: 'AUTO-002', title: 'إضافة رد تلقائي', priority: 'high',
+        steps: ['اضغط "إضافة"', 'أدخل الكلمة المفتاحية والرد', 'احفظ'],
+        expected: 'يتم إنشاء الرد التلقائي' },
+      { id: 'AUTO-003', title: 'اختبار رد تلقائي', priority: 'critical',
+        steps: ['أنشئ رد تلقائي بكلمة مفتاحية', 'أرسل الكلمة عبر واتساب', 'تحقق من الرد'],
+        expected: 'البوت يرد بالرد التلقائي المحدد' },
+      { id: 'AUTO-004', title: 'تعديل رد تلقائي', priority: 'medium',
+        steps: ['عدّل نص رد تلقائي', 'احفظ', 'اختبر'],
+        expected: 'يتم استخدام النص المعدّل' },
+      { id: 'AUTO-005', title: 'حذف رد تلقائي', priority: 'medium',
+        steps: ['احذف رد تلقائي', 'اختبر الكلمة المفتاحية'],
+        expected: 'البوت لا يستخدم الرد المحذوف' },
+      { id: 'AUTO-006', title: 'تصنيف الردود', priority: 'low',
+        steps: ['أنشئ ردود في تصنيفات مختلفة', 'تحقق من الفلترة بالتصنيف'],
+        expected: 'يتم تنظيم الردود حسب التصنيفات' },
+    ]
+  },
+  {
+    id: 'knowledge_base',
+    name: 'قاعدة المعرفة',
+    nameEn: 'Knowledge Base',
+    icon: '📚',
+    color: 'sky',
+    tests: [
+      { id: 'KB-001', title: 'عرض المقالات', priority: 'high',
+        steps: ['انتقل لـ /dashboard/knowledge-base', 'تحقق من ظهور المقالات'],
+        expected: 'تظهر قائمة المقالات مع العناوين والتصنيفات' },
+      { id: 'KB-002', title: 'إضافة مقال جديد', priority: 'high',
+        steps: ['اضغط "إضافة مقال"', 'أدخل العنوان والمحتوى', 'احفظ'],
+        expected: 'يتم إنشاء المقال وحفظه' },
+      { id: 'KB-003', title: 'ربط المقال بالبوت', priority: 'critical',
+        steps: ['أضف مقال عن خدمة معينة', 'اسأل البوت عن نفس الخدمة عبر واتساب'],
+        expected: 'البوت يستخدم محتوى المقال في ردوده' },
+      { id: 'KB-004', title: 'تعديل مقال', priority: 'medium',
+        steps: ['افتح مقال', 'عدّل المحتوى', 'احفظ'],
+        expected: 'يتم تحديث المقال والبوت يستخدم النسخة الجديدة' },
+      { id: 'KB-005', title: 'حذف مقال', priority: 'medium',
+        steps: ['احذف مقال', 'اختبر سؤال مرتبط'],
+        expected: 'البوت لا يستخدم المقال المحذوف بعد الآن' },
+      { id: 'KB-006', title: 'البحث في المقالات', priority: 'medium',
+        steps: ['ابحث بكلمة مفتاحية', 'تحقق من النتائج'],
+        expected: 'تظهر المقالات المطابقة' },
+    ]
+  },
+  {
+    id: 'analytics',
+    name: 'التحليلات والتقارير',
+    nameEn: 'Analytics & Reports',
+    icon: '📈',
+    color: 'rose',
+    tests: [
+      { id: 'ANLYT-001', title: 'صفحة التحليلات الرئيسية', priority: 'high',
+        steps: ['انتقل لـ /dashboard/analytics', 'تحقق من ظهور الرسوم البيانية'],
+        expected: 'تظهر لوحة تحليلات شاملة مع رسوم بيانية' },
+      { id: 'ANLYT-002', title: 'إحصائيات المحادثات', priority: 'high',
+        steps: ['تحقق من عدد المحادثات', 'تحقق من معدل الاستجابة', 'تحقق من الرسم البياني'],
+        expected: 'تظهر إحصائيات المحادثات بدقة مع رسوم بيانية' },
+      { id: 'ANLYT-003', title: 'تحليل العملاء المحتملين', priority: 'high',
+        steps: ['تحقق من قمع التحويل', 'تحقق من معدل التحويل'],
+        expected: 'يعرض قمع العملاء مع نسب التحويل الصحيحة' },
+      { id: 'ANLYT-004', title: 'فلترة بالتاريخ', priority: 'high',
+        steps: ['اختر فترة زمنية (اليوم/الأسبوع/الشهر)', 'تحقق من تحديث البيانات'],
+        expected: 'تتحدث البيانات حسب الفترة المحددة' },
+      { id: 'ANLYT-005', title: 'أداء الفريق', priority: 'medium',
+        steps: ['تحقق من إحصائيات كل مسوق', 'تحقق من المقارنة بين المسوقين'],
+        expected: 'تظهر مؤشرات أداء الفريق بشكل مقارن' },
+      { id: 'ANLYT-006', title: 'تصدير التقارير', priority: 'medium',
+        steps: ['اضغط "تصدير"', 'اختر PDF أو CSV', 'تحقق من الملف'],
+        expected: 'يتم تصدير التقرير بالصيغة المختارة' },
+      { id: 'ANLYT-007', title: 'إحصائيات البوت', priority: 'high',
+        steps: ['تحقق من عدد الردود التلقائية', 'تحقق من نسبة التصعيد', 'تحقق من رضا العملاء'],
+        expected: 'تظهر إحصائيات أداء البوت بشكل واضح' },
+      { id: 'ANLYT-008', title: 'إحصائيات العقارات', priority: 'medium',
+        steps: ['تحقق من العقارات الأكثر طلباً', 'تحقق من توزيع العقارات بالنوع'],
+        expected: 'تظهر تحليلات العقارات مع أكثرها طلباً' },
+    ]
+  },
+  {
+    id: 'notifications',
+    name: 'الإشعارات',
+    nameEn: 'Notifications',
+    icon: '🔔',
+    color: 'yellow',
+    tests: [
+      { id: 'NOTIF-001', title: 'عرض قائمة الإشعارات', priority: 'high',
+        steps: ['اضغط أيقونة الإشعارات في الشريط العلوي', 'تحقق من ظهور القائمة'],
+        expected: 'تظهر قائمة الإشعارات مرتبة بالأحدث' },
+      { id: 'NOTIF-002', title: 'إشعار فوري عند رسالة جديدة', priority: 'critical',
+        steps: ['أرسل رسالة واتساب من رقم جديد', 'تحقق من ظهور إشعار في الوقت الفعلي'],
+        expected: 'يظهر إشعار فوري بالرسالة الجديدة' },
+      { id: 'NOTIF-003', title: 'إشعار عند موعد قريب', priority: 'high',
+        steps: ['أنشئ موعد قريب', 'تحقق من ظهور تذكير'],
+        expected: 'يظهر إشعار تذكير بالموعد القريب' },
+      { id: 'NOTIF-004', title: 'تفضيلات الإشعارات', priority: 'medium',
+        steps: ['انتقل لإعدادات الإشعارات', 'عطّل نوع إشعار', 'اختبر'],
+        expected: 'الإشعارات المعطّلة لا تظهر' },
+      { id: 'NOTIF-005', title: 'إشعارات البريد الإلكتروني', priority: 'medium',
+        steps: ['فعّل إشعارات البريد', 'اختبر وصول بريد عند حدث معين'],
+        expected: 'يتم إرسال بريد إلكتروني عند الأحداث المفعّلة' },
+      { id: 'NOTIF-006', title: 'النشرة الأسبوعية', priority: 'low',
+        steps: ['فعّل النشرة الأسبوعية', 'تحقق من إعداداتها'],
+        expected: 'إعدادات النشرة الأسبوعية تحفظ بشكل صحيح' },
+    ]
+  },
+  {
+    id: 'billing',
+    name: 'الفوترة والاشتراكات',
+    nameEn: 'Billing & Subscriptions',
+    icon: '💳',
+    color: 'slate',
+    tests: [
+      { id: 'BILL-001', title: 'عرض صفحة الفوترة', priority: 'high',
+        steps: ['انتقل لـ /dashboard/billing', 'تحقق من ظهور الخطة الحالية'],
+        expected: 'تظهر تفاصيل الخطة الحالية والاستهلاك' },
+      { id: 'BILL-002', title: 'حاسبة العائد (ROI)', priority: 'medium',
+        steps: ['افتح حاسبة العائد', 'أدخل بيانات (عدد العملاء، متوسط البيع)', 'تحقق من النتائج'],
+        expected: 'تحسب العائد المتوقع بدقة' },
+      { id: 'BILL-003', title: 'ترقية الخطة', priority: 'critical',
+        steps: ['اضغط "ترقية"', 'اختر خطة أعلى', 'أكمل الدفع عبر Tap'],
+        expected: 'يتم ترقية الخطة بعد الدفع الناجح' },
+      { id: 'BILL-004', title: 'سجل المدفوعات', priority: 'high',
+        steps: ['تحقق من سجل المدفوعات السابقة', 'تحقق من الفواتير'],
+        expected: 'يظهر سجل كامل للمدفوعات والفواتير' },
+      { id: 'BILL-005', title: 'حدود الاستخدام', priority: 'critical',
+        steps: ['تحقق من عداد الاستخدام (رسائل، محادثات)', 'قارن مع حدود الخطة'],
+        expected: 'تظهر حدود الاستخدام بدقة مع التحذيرات' },
+      { id: 'BILL-006', title: 'إشعار قرب نفاد الرصيد', priority: 'high',
+        steps: ['عند اقتراب الاستهلاك من الحد', 'تحقق من ظهور تحذير'],
+        expected: 'يظهر تحذير عند قرب نفاد الرصيد' },
+      { id: 'BILL-007', title: 'الدفع عبر Tap', priority: 'critical',
+        steps: ['ابدأ عملية دفع', 'تحقق من إعادة التوجيه لبوابة Tap', 'أكمل الدفع'],
+        expected: 'يتم الدفع عبر Tap بنجاح ويحدث الاشتراك' },
+      { id: 'BILL-008', title: 'إلغاء الاشتراك', priority: 'high',
+        steps: ['اضغط "إلغاء الاشتراك"', 'تحقق من رسالة التأكيد', 'أكد الإلغاء'],
+        expected: 'يتم إلغاء الاشتراك مع الاحتفاظ بالبيانات' },
+    ]
+  },
+  {
+    id: 'agent_portal',
+    name: 'صفحة الوكيل العقاري',
+    nameEn: 'Agent Portal',
+    icon: '🏢',
+    color: 'blue',
+    tests: [
+      { id: 'AGENT-001', title: 'عرض صفحة الوكيل العامة', priority: 'critical',
+        steps: ['افتح /agent/[slug]', 'تحقق من ظهور بيانات الوكيل'],
+        expected: 'تظهر صفحة الوكيل مع الاسم والوصف والشعار' },
+      { id: 'AGENT-002', title: 'شبكة العقارات العامة', priority: 'critical',
+        steps: ['في صفحة الوكيل تحقق من ظهور العقارات', 'تحقق من الصور والأسعار'],
+        expected: 'تظهر عقارات الوكيل في شبكة جذابة' },
+      { id: 'AGENT-003', title: 'فلترة العقارات العامة', priority: 'high',
+        steps: ['استخدم فلاتر البحث (النوع، المدينة، السعر)', 'تحقق من التصفية'],
+        expected: 'تتصفى العقارات حسب المعايير المختارة' },
+      { id: 'AGENT-004', title: 'نموذج التواصل', priority: 'high',
+        steps: ['اضغط "تواصل"', 'أدخل بيانات التواصل', 'أرسل الطلب'],
+        expected: 'يتم إرسال طلب التواصل وإشعار الوكيل' },
+      { id: 'AGENT-005', title: 'رمز QR للصفحة', priority: 'medium',
+        steps: ['تحقق من ظهور QR Code في الصفحة', 'امسح الرمز بالجوال'],
+        expected: 'QR Code يفتح صفحة الوكيل' },
+      { id: 'AGENT-006', title: 'إعدادات النطاق المخصص', priority: 'medium',
+        steps: ['انتقل لإعدادات النطاق', 'تحقق من إمكانية إضافة نطاق مخصص'],
+        expected: 'يمكن إعداد نطاق مخصص لصفحة الوكيل' },
+      { id: 'AGENT-007', title: 'زر واتساب في الصفحة', priority: 'high',
+        steps: ['تحقق من ظهور زر واتساب العائم', 'اضغط عليه', 'تحقق من فتح واتساب'],
+        expected: 'يفتح واتساب مع رقم الوكيل' },
+      { id: 'AGENT-008', title: 'SEO والبيانات المنظمة', priority: 'medium',
+        steps: ['افحص عناصر meta في الصفحة', 'تحقق من og:title, og:image', 'تحقق من Schema.org'],
+        expected: 'الصفحة تحتوي على بيانات SEO منظمة' },
+    ]
+  },
+  {
+    id: 'webhook',
+    name: 'Webhook والتكامل',
+    nameEn: 'Webhook & Integration',
+    icon: '🔗',
+    color: 'pink',
+    tests: [
+      { id: 'HOOK-001', title: 'استقبال رسالة نصية', priority: 'critical',
+        steps: ['أرسل رسالة نصية عبر واتساب', 'تحقق من وصولها للنظام', 'تحقق من ظهورها في المحادثات'],
+        expected: 'الرسالة تصل وتظهر في المحادثة الصحيحة' },
+      { id: 'HOOK-002', title: 'استقبال صورة', priority: 'high',
+        steps: ['أرسل صورة عبر واتساب', 'تحقق من حفظها وعرضها'],
+        expected: 'الصورة تحفظ وتعرض في المحادثة' },
+      { id: 'HOOK-003', title: 'استقبال ملف/مستند', priority: 'high',
+        steps: ['أرسل ملف PDF عبر واتساب', 'تحقق من حفظه'],
+        expected: 'الملف يحفظ ويمكن تحميله' },
+      { id: 'HOOK-004', title: 'استقبال رسالة صوتية', priority: 'high',
+        steps: ['أرسل رسالة صوتية', 'تحقق من تحويلها لنص (Whisper)'],
+        expected: 'الرسالة الصوتية تحول لنص ويرد البوت عليها' },
+      { id: 'HOOK-005', title: 'التحقق من توقيع Webhook', priority: 'critical',
+        steps: ['أرسل طلب بتوقيع خاطئ لـ /api/webhook', 'تحقق من الرفض'],
+        expected: 'النظام يرفض الطلبات ذات التوقيع غير الصحيح' },
+      { id: 'HOOK-006', title: 'إعادة المحاولة عند الفشل', priority: 'high',
+        steps: ['تحقق من سلوك النظام عند فشل إرسال رد واتساب', 'تحقق من إعادة المحاولة'],
+        expected: 'النظام يعيد المحاولة مع exponential backoff' },
+      { id: 'HOOK-007', title: 'Circuit Breaker', priority: 'medium',
+        steps: ['تحقق من سلوك النظام عند فشل متكرر', 'تحقق من تفعيل Circuit Breaker'],
+        expected: 'النظام يتوقف عن المحاولة بعد 5 فشل متتالي' },
+      { id: 'HOOK-008', title: 'معالجة الرسائل المتزامنة', priority: 'high',
+        steps: ['أرسل عدة رسائل بسرعة', 'تحقق من معالجتها بالترتيب'],
+        expected: 'كل الرسائل تعالج بالترتيب الصحيح' },
+    ]
+  },
+  {
+    id: 'settings',
+    name: 'الإعدادات العامة',
+    nameEn: 'General Settings',
+    icon: '⚡',
+    color: 'stone',
+    tests: [
+      { id: 'SET-001', title: 'صفحة الإعدادات', priority: 'high',
+        steps: ['انتقل لـ /dashboard/settings', 'تحقق من ظهور كل الأقسام'],
+        expected: 'تظهر أقسام الإعدادات (عام، API، الواتساب، الأمان)' },
+      { id: 'SET-002', title: 'إعدادات المنظمة', priority: 'high',
+        steps: ['عدّل اسم الشركة والوصف', 'ارفع الشعار', 'احفظ'],
+        expected: 'يتم حفظ بيانات المنظمة وتظهر في كل مكان' },
+      { id: 'SET-003', title: 'مفاتيح API', priority: 'critical',
+        steps: ['أدخل مفتاح OpenAI', 'أدخل بيانات Wasender', 'احفظ', 'اختبر الاتصال'],
+        expected: 'يتم حفظ المفاتيح بشكل مشفر واختبار الاتصال بنجاح' },
+      { id: 'SET-004', title: 'إعدادات الواتساب', priority: 'critical',
+        steps: ['أدخل Instance ID', 'أدخل API Key', 'تحقق من حالة الاتصال'],
+        expected: 'يتم الربط مع واتساب بنجاح' },
+      { id: 'SET-005', title: 'Webhook URL', priority: 'critical',
+        steps: ['تحقق من عرض Webhook URL', 'انسخه وسجله في Wasender'],
+        expected: 'يظهر Webhook URL الصحيح' },
+      { id: 'SET-006', title: 'إعدادات الأمان', priority: 'high',
+        steps: ['تحقق من إعدادات CSRF', 'تحقق من إعدادات التشفير'],
+        expected: 'إعدادات الأمان مفعّلة وتعمل' },
+      { id: 'SET-007', title: 'المنطقة الزمنية', priority: 'medium',
+        steps: ['غيّر المنطقة الزمنية', 'تحقق من تحديث الأوقات في المنصة'],
+        expected: 'تتغير الأوقات المعروضة حسب المنطقة الزمنية' },
+      { id: 'SET-008', title: 'إعدادات البريد الإلكتروني', priority: 'medium',
+        steps: ['أدخل مفتاح Resend', 'أرسل بريد اختباري', 'تحقق من الوصول'],
+        expected: 'يتم إرسال البريد الاختباري بنجاح' },
+    ]
+  },
+  {
+    id: 'admin',
+    name: 'إدارة المستخدمين (Admin)',
+    nameEn: 'Admin Panel',
+    icon: '🛡️',
+    color: 'red',
+    tests: [
+      { id: 'ADM-001', title: 'لوحة تحكم المدير العام', priority: 'critical',
+        steps: ['سجل بحساب Super Admin', 'انتقل لـ /admin', 'تحقق من الإحصائيات'],
+        expected: 'تظهر لوحة تحكم المدير مع إحصائيات المنصة' },
+      { id: 'ADM-002', title: 'إدارة الشركات', priority: 'critical',
+        steps: ['انتقل لـ /admin/companies', 'تحقق من قائمة الشركات المسجلة'],
+        expected: 'تظهر كل الشركات مع حالتها وخططها' },
+      { id: 'ADM-003', title: 'موافقة/رفض شركة', priority: 'critical',
+        steps: ['افتح شركة معلقة', 'وافق عليها أو ارفضها'],
+        expected: 'يتم تغيير حالة الشركة وإشعار المالك' },
+      { id: 'ADM-004', title: 'إدارة المستخدمين', priority: 'high',
+        steps: ['انتقل لـ /admin/users', 'ابحث عن مستخدم', 'تحقق من تفاصيله'],
+        expected: 'تظهر قائمة كل المستخدمين مع التفاصيل' },
+      { id: 'ADM-005', title: 'سجل التدقيق (Audit Log)', priority: 'high',
+        steps: ['انتقل لـ /admin/audit-log', 'تحقق من تسجيل العمليات'],
+        expected: 'يظهر سجل كامل لكل العمليات الحساسة' },
+      { id: 'ADM-006', title: 'إدارة الاشتراكات', priority: 'high',
+        steps: ['انتقل لـ /admin/subscriptions', 'تحقق من الخطط والأسعار'],
+        expected: 'تظهر إدارة الخطط والاشتراكات' },
+      { id: 'ADM-007', title: 'تحليلات المنصة', priority: 'medium',
+        steps: ['انتقل لـ /admin/analytics', 'تحقق من الإحصائيات العامة'],
+        expected: 'تظهر تحليلات شاملة للمنصة' },
+      { id: 'ADM-008', title: 'منع الوصول غير المصرح', priority: 'critical',
+        steps: ['سجل بحساب عادي (ليس Super Admin)', 'حاول الوصول لـ /admin'],
+        expected: 'يمنع الوصول ويعيد التوجيه' },
+    ]
+  },
+  {
+    id: 'monitoring',
+    name: 'المراقبة (Admin)',
+    nameEn: 'System Monitoring',
+    icon: '📡',
+    color: 'fuchsia',
+    tests: [
+      { id: 'MON-001', title: 'صحة النظام', priority: 'high',
+        steps: ['انتقل لـ /admin/monitoring', 'تحقق من حالة الخدمات'],
+        expected: 'تظهر حالة كل الخدمات (Supabase, OpenAI, Wasender)' },
+      { id: 'MON-002', title: 'تتبع الأخطاء', priority: 'high',
+        steps: ['تحقق من سجل الأخطاء', 'تحقق من التفاصيل'],
+        expected: 'تظهر الأخطاء مع تفاصيل كاملة (الوقت، النوع، المصدر)' },
+      { id: 'MON-003', title: 'جلسات واتساب', priority: 'critical',
+        steps: ['انتقل لـ /admin/whatsapp-sessions', 'تحقق من حالة الجلسات'],
+        expected: 'تظهر جلسات واتساب مع حالة كل واحدة' },
+      { id: 'MON-004', title: 'حاسبة التكاليف', priority: 'medium',
+        steps: ['افتح حاسبة التكاليف', 'أدخل عدد الرسائل المتوقع'],
+        expected: 'تحسب التكلفة المتوقعة بدقة' },
+      { id: 'MON-005', title: 'Health Check API', priority: 'high',
+        steps: ['أرسل طلب GET لـ /api/health', 'تحقق من الاستجابة'],
+        expected: 'يرد بحالة صحية 200 OK مع تفاصيل الخدمات' },
+      { id: 'MON-006', title: 'مراقبة الأداء', priority: 'medium',
+        steps: ['تحقق من أوقات الاستجابة', 'تحقق من استهلاك الموارد'],
+        expected: 'أوقات الاستجابة ضمن الحدود المقبولة' },
+    ]
+  },
+  {
+    id: 'marketing',
+    name: 'التسويق والحملات',
+    nameEn: 'Marketing',
+    icon: '📣',
+    color: 'lime',
+    tests: [
+      { id: 'MKT-001', title: 'قواعد توزيع العملاء', priority: 'high',
+        steps: ['انتقل لإعدادات التوزيع', 'حدد قواعد (round-robin/manual)', 'احفظ'],
+        expected: 'يتم حفظ قواعد التوزيع وتطبيقها' },
+      { id: 'MKT-002', title: 'تنبيهات SLA', priority: 'high',
+        steps: ['حدد وقت SLA (مثلاً 30 دقيقة)', 'اترك رسالة بدون رد', 'تحقق من التنبيه'],
+        expected: 'يظهر تنبيه عند تجاوز وقت SLA' },
+      { id: 'MKT-003', title: 'إعدادات الحملات', priority: 'medium',
+        steps: ['انتقل لـ /dashboard/marketing', 'تحقق من الإعدادات المتاحة'],
+        expected: 'تظهر إعدادات الحملات التسويقية' },
+      { id: 'MKT-004', title: 'التوزيع التلقائي', priority: 'critical',
+        steps: ['فعّل التوزيع التلقائي', 'أرسل رسالة من رقم جديد', 'تحقق من التعيين التلقائي'],
+        expected: 'يتم تعيين العميل لمسوق تلقائياً' },
+      { id: 'MKT-005', title: 'رسائل المتابعة التلقائية', priority: 'high',
+        steps: ['حدد رسالة متابعة بعد 24 ساعة', 'احفظ', 'تحقق من الإرسال التلقائي'],
+        expected: 'يتم إرسال رسالة المتابعة تلقائياً' },
+      { id: 'MKT-006', title: 'إحصائيات التسويق', priority: 'medium',
+        steps: ['تحقق من معدل التحويل', 'تحقق من تكلفة الاستحواذ'],
+        expected: 'تظهر مؤشرات التسويق الرئيسية' },
+    ]
+  },
+  {
+    id: 'responsive',
+    name: 'الاستجابة والتوافق',
+    nameEn: 'Responsive Design',
+    icon: '📱',
+    color: 'fuchsia',
+    tests: [
+      { id: 'RESP-001', title: 'عرض الجوال (375x812)', priority: 'high',
+        steps: ['افتح DevTools وفعّل وضع الجوال', 'تنقل بين الصفحات الرئيسية'],
+        expected: 'كل الصفحات تعرض بشكل صحيح على الجوال' },
+      { id: 'RESP-002', title: 'عرض التابلت (768x1024)', priority: 'high',
+        steps: ['فعّل وضع التابلت', 'تنقل بين الصفحات'],
+        expected: 'العرض مناسب للتابلت مع القوائم الجانبية' },
+      { id: 'RESP-003', title: 'عرض سطح المكتب (1920x1080)', priority: 'high',
+        steps: ['كبّر المتصفح لملء الشاشة', 'تحقق من استخدام المساحة'],
+        expected: 'التطبيق يستخدم مساحة الشاشة بفعالية' },
+      { id: 'RESP-004', title: 'اتجاه RTL (العربية)', priority: 'critical',
+        steps: ['تحقق من اتجاه النصوص والعناصر', 'تحقق من القوائم والأزرار'],
+        expected: 'كل العناصر تعرض من اليمين لليسار' },
+      { id: 'RESP-005', title: 'الوضع الداكن (Dark Mode)', priority: 'medium',
+        steps: ['غيّر للوضع الداكن', 'تنقل بين الصفحات', 'تحقق من التباين'],
+        expected: 'كل الصفحات تدعم الوضع الداكن بشكل مقبول' },
+    ]
+  },
+  {
+    id: 'backup',
+    name: 'النسخ الاحتياطي والبيانات',
+    nameEn: 'Backup & Data',
+    icon: '💾',
+    color: 'gray',
+    tests: [
+      { id: 'BAK-001', title: 'إنشاء نسخة احتياطية', priority: 'high',
+        steps: ['انتقل لـ /dashboard/backup', 'اضغط "إنشاء نسخة"', 'انتظر الاكتمال'],
+        expected: 'يتم إنشاء نسخة احتياطية وتحميلها' },
+      { id: 'BAK-002', title: 'استعادة من نسخة', priority: 'high',
+        steps: ['ارفع ملف نسخة احتياطية', 'اضغط "استعادة"', 'تحقق من البيانات'],
+        expected: 'يتم استعادة البيانات من النسخة بنجاح' },
+      { id: 'BAK-003', title: 'تصدير بيانات العقارات', priority: 'medium',
+        steps: ['اضغط "تصدير العقارات"', 'تحقق من ملف CSV/JSON'],
+        expected: 'يتم تصدير كل بيانات العقارات' },
+      { id: 'BAK-004', title: 'استيراد عقارات من CSV', priority: 'medium',
+        steps: ['حضّر ملف CSV بالتنسيق المطلوب', 'ارفع الملف', 'تحقق من الاستيراد'],
+        expected: 'يتم استيراد العقارات بنجاح' },
+      { id: 'BAK-005', title: 'تصدير سجل المحادثات', priority: 'low',
+        steps: ['اضغط "تصدير المحادثات"', 'تحقق من الملف'],
+        expected: 'يتم تصدير سجل المحادثات' },
+    ]
+  },
+  {
+    id: 'marketer_registration',
+    name: 'تسجيل المسوقين واتساب',
+    nameEn: 'Marketer WhatsApp Registration',
+    icon: '📲',
+    color: 'cyan',
+    tests: [
+      { id: 'MREG-001', title: 'بدء تسجيل مسوق جديد', priority: 'high',
+        steps: ['أرسل رسالة "تسجيل مسوق" عبر واتساب', 'تحقق من رد البوت بطلب المعلومات'],
+        expected: 'البوت يبدأ عملية التسجيل ويطلب البيانات' },
+      { id: 'MREG-002', title: 'إدخال بيانات المسوق', priority: 'high',
+        steps: ['أدخل الاسم والمدينة والتخصص عبر واتساب', 'تحقق من حفظ البيانات'],
+        expected: 'البوت يجمع المعلومات خطوة بخطوة' },
+      { id: 'MREG-003', title: 'التحقق من رقم الجوال', priority: 'critical',
+        steps: ['تحقق من إرسال رمز تحقق', 'أدخل الرمز', 'تحقق من القبول'],
+        expected: 'يتم التحقق من رقم الجوال بنجاح' },
+      { id: 'MREG-004', title: 'موافقة المدير على المسوق', priority: 'critical',
+        steps: ['بعد التسجيل تحقق من إشعار المدير', 'وافق على الطلب', 'تحقق من إشعار المسوق'],
+        expected: 'يتم إشعار المدير والمسوق بالنتيجة' },
+      { id: 'MREG-005', title: 'دخول المسوق بعد الموافقة', priority: 'high',
+        steps: ['بعد الموافقة، سجل دخول المسوق', 'تحقق من صلاحياته'],
+        expected: 'المسوق يدخل النظام مع صلاحيات مسوق' },
+      { id: 'MREG-006', title: 'رفض تسجيل مكرر', priority: 'medium',
+        steps: ['حاول تسجيل نفس الرقم مرتين', 'تحقق من رفض التسجيل المكرر'],
+        expected: 'النظام يرفض التسجيل المكرر مع رسالة مناسبة' },
+    ]
+  },
+  {
+    id: 'e2e_flows',
+    name: 'سيناريوهات شاملة (E2E)',
+    nameEn: 'End-to-End Flows',
+    icon: '🔄',
+    color: 'rose',
+    tests: [
+      { id: 'E2E-001', title: 'استفسار عميل \u2192 عميل محتمل \u2192 عقار', priority: 'critical',
+        steps: ['أرسل "أبحث عن شقة في الرياض" عبر واتساب', 'تحقق من إنشاء عميل محتمل', 'تحقق من عرض العقارات المناسبة', 'تحقق من تسجيل التفاعل'],
+        expected: 'سلسلة كاملة: رسالة \u2192 عميل محتمل \u2192 عقارات مقترحة' },
+      { id: 'E2E-002', title: 'حجز موعد كامل عبر البوت', priority: 'critical',
+        steps: ['أرسل استفسار عن عقار', 'اطلب معاينة', 'أكد الموعد', 'تحقق من الموعد في النظام'],
+        expected: 'يتم حجز الموعد وتأكيده من البداية للنهاية عبر واتساب' },
+      { id: 'E2E-003', title: 'تصعيد من البوت \u2192 الوكيل البشري', priority: 'critical',
+        steps: ['أرسل طلب تصعيد', 'تحقق من إشعار الوكيل', 'تولّى الوكيل المحادثة', 'أكمل الخدمة يدوياً'],
+        expected: 'التصعيد يعمل بسلاسة من البوت للوكيل البشري' },
+      { id: 'E2E-004', title: 'تسجيل مسوق \u2192 توزيع عملاء', priority: 'high',
+        steps: ['سجل مسوق جديد عبر واتساب', 'وافق على التسجيل', 'أرسل استفسار من عميل', 'تحقق من تعيينه للمسوق الجديد'],
+        expected: 'المسوق الجديد يستقبل عملاء بعد الموافقة' },
+      { id: 'E2E-005', title: 'دورة حياة عميل كاملة', priority: 'critical',
+        steps: ['عميل جديد \u2192 مؤهل \u2192 مهتم \u2192 موعد \u2192 تم البيع', 'تحقق من كل مرحلة انتقالية'],
+        expected: 'يمر العميل بكل المراحل بسلاسة' },
+      { id: 'E2E-006', title: 'إعداد الشركة من الصفر', priority: 'high',
+        steps: ['سجل حساب جديد', 'أكمل الإعدادات الأساسية', 'أضف عقارات', 'فعّل البوت', 'اختبر محادثة'],
+        expected: 'الشركة جاهزة للعمل بعد الإعداد الكامل' },
+      { id: 'E2E-007', title: 'إضافة عقار \u2192 ظهوره في بحث البوت', priority: 'critical',
+        steps: ['أضف عقار جديد بالتفاصيل', 'أرسل استفسار عن عقار مشابه عبر واتساب', 'تحقق من ظهور العقار الجديد في النتائج'],
+        expected: 'العقار المضاف يظهر فوراً في بحث البوت' },
+      { id: 'E2E-008', title: 'الدفع \u2192 الترقية \u2192 زيادة الحدود', priority: 'high',
+        steps: ['ادفع لترقية الخطة', 'تحقق من تحديث الخطة', 'تحقق من زيادة حدود الاستخدام'],
+        expected: 'تتم الترقية وتزداد الحدود فوراً' },
+    ]
+  },
+];
+
+// ==================== STATE ====================
+let currentRun = null;
+let currentView = 'categories';
+let currentCategory = null;
+let testResults = {};
+let currentUser = null;
+let approvalInterval = null;
+
+// ==================== SUPABASE CONNECTION ====================
+async function checkConnection() {
+  try {
+    const { data, error } = await sb.from('test_runs').select('id').limit(1);
+    if (error) throw error;
+    setConnectionStatus(true);
+    return true;
+  } catch (e) {
+    setConnectionStatus(false);
+    console.error('Connection error:', e);
+    return false;
+  }
+}
+
+function setConnectionStatus(connected) {
+  const el = document.getElementById('connStatus');
+  if (connected) {
+    el.textContent = '🟢 متصل';
+    el.className = 'text-xs bg-green-500/20 text-green-100 px-3 py-1 rounded-full';
+  } else {
+    el.textContent = '🔴 غير متصل';
+    el.className = 'text-xs bg-red-500/20 text-red-100 px-3 py-1 rounded-full';
+  }
+}
+
+// ==================== INIT ====================
+async function init() {
+  document.getElementById('authScreen').classList.add('hidden');
+  document.getElementById('mainApp').classList.remove('hidden');
+  document.getElementById('userBadge').textContent = currentUser ? currentUser.name : '';
+
+  await checkConnection();
+  populateCategoryFilter();
+  await loadRuns();
+  renderCategories();
+}
+
+// ==================== CATEGORY FILTER ====================
+function populateCategoryFilter() {
+  const sel = document.getElementById('filterCategory');
+  sel.innerHTML = '<option value="">كل التصنيفات</option>';
+  TEST_CASES.forEach(cat => {
+    sel.innerHTML += `<option value="${cat.id}">${cat.icon} ${cat.name}</option>`;
+  });
+}
+
+// ==================== RUNS ====================
+async function loadRuns() {
+  try {
+    const { data, error } = await sb.from('test_runs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+
+    const sel = document.getElementById('runSelect');
+    sel.innerHTML = '<option value="">اختر جولة اختبار...</option>';
+    (data || []).forEach(run => {
+      const date = new Date(run.created_at).toLocaleString('ar-SA', { dateStyle: 'short', timeStyle: 'short' });
+      sel.innerHTML += `<option value="${run.id}">${run.name} - ${date}</option>`;
+    });
+  } catch (e) {
+    console.error('Error loading runs:', e);
+  }
+}
+
+function showNewRunModal() {
+  document.getElementById('newRunModal').classList.remove('hidden');
+  document.getElementById('runName').value = '';
+  document.getElementById('runNotes').value = '';
+}
+
+async function createNewRun() {
+  const name = document.getElementById('runName').value.trim();
+  const env = document.getElementById('runEnv').value;
+  const notes = document.getElementById('runNotes').value.trim();
+
+  if (!name) { alert('ادخل اسم الجولة'); return; }
+
+  try {
+    const { data, error } = await sb.from('test_runs').insert({
+      name,
+      environment: env,
+      notes,
+      tester: currentUser ? currentUser.name : 'Unknown',
+      tester_phone: currentUser ? currentUser.phone : '',
+      total_tests: TEST_CASES.reduce((sum, cat) => sum + cat.tests.length, 0),
+      status: 'in_progress'
+    }).select().single();
+
+    if (error) throw error;
+
+    document.getElementById('newRunModal').classList.add('hidden');
+    await loadRuns();
+    document.getElementById('runSelect').value = data.id;
+    await loadRun(data.id);
+  } catch (e) {
+    console.error('Error creating run:', e);
+    alert('خطأ في إنشاء الجولة: ' + e.message);
+  }
+}
+
+async function loadRun(runId) {
+  if (!runId) {
+    currentRun = null;
+    testResults = {};
+    updateStats();
+    renderCategories();
+    return;
+  }
+
+  try {
+    const { data: run, error } = await sb.from('test_runs')
+      .select('*').eq('id', runId).single();
+    if (error) throw error;
+    currentRun = run;
+
+    const { data: results, error: resErr } = await sb.from('test_results')
+      .select('*').eq('run_id', runId);
+    if (resErr) throw resErr;
+
+    testResults = {};
+    (results || []).forEach(r => {
+      testResults[r.test_id] = r;
+    });
+
+    updateStats();
+    if (currentCategory) {
+      renderTestList(currentCategory);
+    } else {
+      renderCategories();
+    }
+  } catch (e) {
+    console.error('Error loading run:', e);
+  }
+}
+
+// ==================== STATS ====================
+function updateStats() {
+  let pass = 0, fail = 0, skip = 0, blocked = 0, pending = 0, total = 0;
+
+  TEST_CASES.forEach(cat => {
+    cat.tests.forEach(test => {
+      total++;
+      const result = testResults[test.id];
+      if (!result || result.status === 'pending') pending++;
+      else if (result.status === 'pass') pass++;
+      else if (result.status === 'fail') fail++;
+      else if (result.status === 'skip') skip++;
+      else if (result.status === 'blocked') blocked++;
+    });
+  });
+
+  document.getElementById('statPass').textContent = pass;
+  document.getElementById('statFail').textContent = fail;
+  document.getElementById('statSkip').textContent = skip;
+  document.getElementById('statBlocked').textContent = blocked;
+  document.getElementById('statPending').textContent = pending;
+  document.getElementById('statTotal').textContent = total;
+
+  const done = pass + fail + skip + blocked;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  document.getElementById('progressBar').style.width = pct + '%';
+  document.getElementById('progressText').textContent = pct + '%';
+}
+
+// ==================== VIEWS ====================
+function toggleView(view) {
+  currentView = view;
+  if (view === 'categories') {
+    document.getElementById('viewCat').className = 'px-3 py-1.5 rounded-lg text-sm bg-teal-600 text-white font-bold';
+    document.getElementById('viewList').className = 'px-3 py-1.5 rounded-lg text-sm bg-gray-200 text-gray-700 font-bold';
+    currentCategory = null;
+    renderCategories();
+  } else {
+    document.getElementById('viewList').className = 'px-3 py-1.5 rounded-lg text-sm bg-teal-600 text-white font-bold';
+    document.getElementById('viewCat').className = 'px-3 py-1.5 rounded-lg text-sm bg-gray-200 text-gray-700 font-bold';
+    renderAllTests();
+  }
+}
+
+// ==================== RENDER CATEGORIES ====================
+function renderCategories() {
+  const area = document.getElementById('contentArea');
+  let html = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 fade-in">';
+
+  TEST_CASES.forEach(cat => {
+    let catPass = 0, catFail = 0, catTotal = cat.tests.length, catDone = 0;
+    cat.tests.forEach(t => {
+      const r = testResults[t.id];
+      if (r && r.status !== 'pending') {
+        catDone++;
+        if (r.status === 'pass') catPass++;
+        if (r.status === 'fail') catFail++;
+      }
+    });
+
+    const pct = catTotal > 0 ? Math.round((catDone / catTotal) * 100) : 0;
+
+    html += `
+      <div onclick="openCategory('${cat.id}')"
+        class="category-card bg-white rounded-xl border-2 border-gray-100 p-5 cursor-pointer transition-all hover:border-${cat.color}-300">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl">${cat.icon}</span>
+            <div>
+              <h3 class="font-bold text-gray-800">${cat.name}</h3>
+              <p class="text-xs text-gray-400">${cat.nameEn}</p>
+            </div>
+          </div>
+          <span class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full font-bold">${catTotal}</span>
+        </div>
+        <div class="bg-gray-200 rounded-full h-2 mb-2 overflow-hidden">
+          <div class="h-full rounded-full bg-${cat.color}-500 progress-bar" style="width: ${pct}%"></div>
+        </div>
+        <div class="flex items-center justify-between text-xs text-gray-500">
+          <span>${pct}% مكتمل</span>
+          <div class="flex gap-2">
+            ${catPass > 0 ? `<span class="text-green-600">${catPass} نجح</span>` : ''}
+            ${catFail > 0 ? `<span class="text-red-600">${catFail} فشل</span>` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  });
+
+  html += '</div>';
+  area.innerHTML = html;
+}
+
+function openCategory(catId) {
+  currentCategory = catId;
+  renderTestList(catId);
+}
+
+// ==================== RENDER TEST LIST ====================
+function renderTestList(catId) {
+  const cat = TEST_CASES.find(c => c.id === catId);
+  if (!cat) return;
+
+  const area = document.getElementById('contentArea');
+  let filteredTests = applyTestFilters(cat.tests);
+
+  let html = `
+    <div class="fade-in">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-3">
+          <button onclick="currentCategory=null;renderCategories()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-sm transition">
+            ← رجوع
+          </button>
+          <span class="text-2xl">${cat.icon}</span>
+          <div>
+            <h2 class="text-xl font-bold text-gray-800">${cat.name}</h2>
+            <p class="text-sm text-gray-400">${cat.nameEn} - ${filteredTests.length} اختبار</p>
+          </div>
+        </div>
+      </div>
+      <div class="space-y-3">
+  `;
+
+  filteredTests.forEach(test => {
+    const result = testResults[test.id] || {};
+    const status = result.status || 'pending';
+    const statusLabels = { pass: 'نجح ✅', fail: 'فشل ❌', skip: 'تخطي ⏭️', blocked: 'محظور 🚫', pending: 'معلق ⏳' };
+    const priorityLabels = { critical: 'حرج', high: 'عالي', medium: 'متوسط', low: 'منخفض' };
+
+    html += `
+      <div class="test-card bg-white rounded-xl border p-4" id="test-${test.id}">
+        <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+          <div class="flex items-center gap-2 flex-wrap">
+            <code class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-mono">${test.id}</code>
+            <span class="text-xs px-2 py-0.5 rounded-full priority-${test.priority}">${priorityLabels[test.priority]}</span>
+            <h3 class="font-bold text-gray-800">${test.title}</h3>
+          </div>
+          <div class="flex items-center gap-1">
+            <span class="text-xs px-2 py-1 rounded-full border status-${status}">${statusLabels[status]}</span>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <p class="text-xs font-bold text-gray-500 mb-1">الخطوات:</p>
+          <ol class="text-sm text-gray-600 list-decimal pr-4 space-y-0.5">
+            ${test.steps.map(s => `<li>${s}</li>`).join('')}
+          </ol>
+        </div>
+
+        <div class="mb-3 bg-teal-50 rounded-lg p-2.5">
+          <p class="text-xs font-bold text-teal-700 mb-0.5">النتيجة المتوقعة:</p>
+          <p class="text-sm text-teal-800">${test.expected}</p>
+        </div>
+
+        ${currentRun ? `
+        <div class="border-t pt-3 mt-3">
+          <div class="flex flex-wrap gap-2 mb-3">
+            <button onclick="setStatus('${test.id}','pass')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition ${status==='pass' ? 'bg-green-600 text-white ring-2 ring-green-300' : 'bg-green-50 text-green-700 hover:bg-green-100'}">✅ نجح</button>
+            <button onclick="setStatus('${test.id}','fail')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition ${status==='fail' ? 'bg-red-600 text-white ring-2 ring-red-300' : 'bg-red-50 text-red-700 hover:bg-red-100'}">❌ فشل</button>
+            <button onclick="setStatus('${test.id}','skip')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition ${status==='skip' ? 'bg-yellow-600 text-white ring-2 ring-yellow-300' : 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100'}">⏭️ تخطي</button>
+            <button onclick="setStatus('${test.id}','blocked')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition ${status==='blocked' ? 'bg-indigo-600 text-white ring-2 ring-indigo-300' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}">🚫 محظور</button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-gray-500 mb-1">ملاحظات</label>
+              <textarea onblur="saveNotes('${test.id}', this.value)" rows="2" placeholder="ملاحظات..."
+                class="w-full border rounded-lg px-3 py-2 text-sm focus:border-teal-500 focus:outline-none">${result.notes || ''}</textarea>
+            </div>
+            <div>
+              <div class="grid grid-cols-2 gap-2 mb-2">
+                <div>
+                  <label class="block text-xs font-bold text-gray-500 mb-1">Bug ID</label>
+                  <input type="text" onblur="saveBugId('${test.id}', this.value)" value="${result.bug_id || ''}" placeholder="BUG-XXX" dir="ltr"
+                    class="w-full border rounded-lg px-3 py-2 text-sm focus:border-teal-500 focus:outline-none">
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-gray-500 mb-1">Severity</label>
+                  <select onchange="saveSeverity('${test.id}', this.value)"
+                    class="w-full border rounded-lg px-3 py-2 text-sm focus:border-teal-500 focus:outline-none">
+                    <option value="" ${!result.severity ? 'selected' : ''}>--</option>
+                    <option value="blocker" ${result.severity === 'blocker' ? 'selected' : ''}>Blocker</option>
+                    <option value="critical" ${result.severity === 'critical' ? 'selected' : ''}>Critical</option>
+                    <option value="major" ${result.severity === 'major' ? 'selected' : ''}>Major</option>
+                    <option value="minor" ${result.severity === 'minor' ? 'selected' : ''}>Minor</option>
+                    <option value="trivial" ${result.severity === 'trivial' ? 'selected' : ''}>Trivial</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-gray-500 mb-1">لقطة شاشة</label>
+                <input type="file" accept="image/*" onchange="uploadScreenshot('${test.id}', this)"
+                  class="w-full border rounded-lg px-2 py-1 text-xs">
+                ${result.screenshot_url ? `
+                  <img src="${result.screenshot_url}" onclick="showImageModal('${result.screenshot_url}')"
+                    class="screenshot-preview mt-2 rounded-lg border">
+                ` : ''}
+              </div>
+            </div>
+          </div>
+        </div>
+        ` : '<p class="text-xs text-gray-400 text-center border-t pt-3 mt-3">اختر جولة اختبار لبدء التسجيل</p>'}
+      </div>
+    `;
+  });
+
+  html += '</div></div>';
+  area.innerHTML = html;
+}
+
+function renderAllTests() {
+  const area = document.getElementById('contentArea');
+  let allTests = [];
+  TEST_CASES.forEach(cat => {
+    cat.tests.forEach(test => {
+      allTests.push({ ...test, catName: cat.name, catIcon: cat.icon, catId: cat.id });
+    });
+  });
+
+  allTests = applyTestFilters(allTests);
+
+  let html = '<div class="fade-in space-y-2">';
+  allTests.forEach(test => {
+    const result = testResults[test.id] || {};
+    const status = result.status || 'pending';
+    const statusLabels = { pass: '✅', fail: '❌', skip: '⏭️', blocked: '🚫', pending: '⏳' };
+    const priorityLabels = { critical: 'حرج', high: 'عالي', medium: 'متوسط', low: 'منخفض' };
+
+    html += `
+      <div class="test-card bg-white rounded-lg border p-3 flex items-center justify-between flex-wrap gap-2 cursor-pointer"
+        onclick="openCategory('${test.catId}')">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span>${test.catIcon}</span>
+          <code class="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-mono">${test.id}</code>
+          <span class="text-xs px-1.5 py-0.5 rounded-full priority-${test.priority}">${priorityLabels[test.priority]}</span>
+          <span class="text-sm font-bold text-gray-800">${test.title}</span>
+        </div>
+        <span class="text-lg">${statusLabels[status]}</span>
+      </div>
+    `;
+  });
+  html += '</div>';
+  area.innerHTML = html;
+}
+
+// ==================== TEST ACTIONS ====================
+async function setStatus(testId, status) {
+  if (!currentRun) { alert('اختر جولة اختبار أولاً'); return; }
+
+  try {
+    const existing = testResults[testId];
+    const record = {
+      run_id: currentRun.id,
+      test_id: testId,
+      status,
+      tester: currentUser ? currentUser.name : 'Unknown',
+      updated_at: new Date().toISOString()
+    };
+
+    if (existing && existing.id) {
+      const { error } = await sb.from('test_results')
+        .update(record).eq('id', existing.id);
+      if (error) throw error;
+      testResults[testId] = { ...existing, ...record };
+    } else {
+      record.created_at = new Date().toISOString();
+      const { data, error } = await sb.from('test_results')
+        .insert(record).select().single();
+      if (error) throw error;
+      testResults[testId] = data;
+    }
+
+    updateStats();
+    if (currentCategory) renderTestList(currentCategory);
+  } catch (e) {
+    console.error('Error setting status:', e);
+    alert('خطأ: ' + e.message);
+  }
+}
+
+async function saveNotes(testId, notes) {
+  if (!currentRun) return;
+  try {
+    const existing = testResults[testId];
+    if (existing && existing.id) {
+      await sb.from('test_results').update({ notes }).eq('id', existing.id);
+      testResults[testId].notes = notes;
+    } else {
+      const { data } = await sb.from('test_results').insert({
+        run_id: currentRun.id, test_id: testId, status: 'pending', notes,
+        tester: currentUser ? currentUser.name : 'Unknown',
+        created_at: new Date().toISOString()
+      }).select().single();
+      if (data) testResults[testId] = data;
+    }
+  } catch (e) { console.error('Error saving notes:', e); }
+}
+
+async function saveBugId(testId, bugId) {
+  if (!currentRun) return;
+  try {
+    const existing = testResults[testId];
+    if (existing && existing.id) {
+      await sb.from('test_results').update({ bug_id: bugId }).eq('id', existing.id);
+      testResults[testId].bug_id = bugId;
+    } else {
+      const { data } = await sb.from('test_results').insert({
+        run_id: currentRun.id, test_id: testId, status: 'pending', bug_id: bugId,
+        tester: currentUser ? currentUser.name : 'Unknown',
+        created_at: new Date().toISOString()
+      }).select().single();
+      if (data) testResults[testId] = data;
+    }
+  } catch (e) { console.error('Error saving bug ID:', e); }
+}
+
+async function saveSeverity(testId, severity) {
+  if (!currentRun) return;
+  try {
+    const existing = testResults[testId];
+    if (existing && existing.id) {
+      await sb.from('test_results').update({ severity }).eq('id', existing.id);
+      testResults[testId].severity = severity;
+    } else {
+      const { data } = await sb.from('test_results').insert({
+        run_id: currentRun.id, test_id: testId, status: 'pending', severity,
+        tester: currentUser ? currentUser.name : 'Unknown',
+        created_at: new Date().toISOString()
+      }).select().single();
+      if (data) testResults[testId] = data;
+    }
+  } catch (e) { console.error('Error saving severity:', e); }
+}
+
+async function uploadScreenshot(testId, input) {
+  if (!currentRun || !input.files.length) return;
+
+  const file = input.files[0];
+  const fileName = `screenshots/${currentRun.id}/${testId}_${Date.now()}.${file.name.split('.').pop()}`;
+
+  try {
+    const { data: uploadData, error: uploadErr } = await sb.storage
+      .from('test-screenshots')
+      .upload(fileName, file, { upsert: true });
+    if (uploadErr) throw uploadErr;
+
+    const { data: urlData } = sb.storage.from('test-screenshots').getPublicUrl(fileName);
+    const screenshotUrl = urlData.publicUrl;
+
+    const existing = testResults[testId];
+    if (existing && existing.id) {
+      await sb.from('test_results').update({ screenshot_url: screenshotUrl }).eq('id', existing.id);
+      testResults[testId].screenshot_url = screenshotUrl;
+    } else {
+      const { data } = await sb.from('test_results').insert({
+        run_id: currentRun.id, test_id: testId, status: 'pending', screenshot_url: screenshotUrl,
+        tester: currentUser ? currentUser.name : 'Unknown',
+        created_at: new Date().toISOString()
+      }).select().single();
+      if (data) testResults[testId] = data;
+    }
+
+    if (currentCategory) renderTestList(currentCategory);
+  } catch (e) {
+    console.error('Error uploading screenshot:', e);
+    alert('خطأ في رفع الصورة: ' + e.message);
+  }
+}
+
+function showImageModal(url) {
+  document.getElementById('imageModalImg').src = url;
+  document.getElementById('imageModal').classList.remove('hidden');
+}
+
+// ==================== FILTERS ====================
+function applyTestFilters(tests) {
+  const statusFilter = document.getElementById('filterStatus').value;
+  const priorityFilter = document.getElementById('filterPriority').value;
+  const searchFilter = document.getElementById('filterSearch').value.toLowerCase();
+
+  return tests.filter(test => {
+    const result = testResults[test.id] || {};
+    const status = result.status || 'pending';
+
+    if (statusFilter && status !== statusFilter) return false;
+    if (priorityFilter && test.priority !== priorityFilter) return false;
+    if (searchFilter && !test.title.toLowerCase().includes(searchFilter) && !test.id.toLowerCase().includes(searchFilter)) return false;
+
+    return true;
+  });
+}
+
+function applyFilters() {
+  const catFilter = document.getElementById('filterCategory').value;
+
+  if (currentView === 'categories') {
+    if (catFilter) {
+      openCategory(catFilter);
+    } else if (currentCategory) {
+      renderTestList(currentCategory);
+    } else {
+      renderCategories();
+    }
+  } else {
+    renderAllTests();
+  }
+}
+
+// ==================== SETUP ====================
+function saveSetup() {
+  const url = document.getElementById('setupUrl').value.trim();
+  const notes = document.getElementById('setupNotes').value.trim();
+  if (url) localStorage.setItem('testBaseUrl', url);
+  if (notes) localStorage.setItem('testNotes', notes);
+  document.getElementById('setupModal').classList.add('hidden');
+}
+
+// ==================== EXPORT ====================
+function exportReport() {
+  let totalTests = 0, pass = 0, fail = 0, skip = 0, blocked = 0;
+
+  TEST_CASES.forEach(cat => cat.tests.forEach(t => {
+    totalTests++;
+    const r = testResults[t.id];
+    if (r) {
+      if (r.status === 'pass') pass++;
+      else if (r.status === 'fail') fail++;
+      else if (r.status === 'skip') skip++;
+      else if (r.status === 'blocked') blocked++;
+    }
+  }));
+
+  const pending = totalTests - pass - fail - skip - blocked;
+  const done = pass + fail + skip + blocked;
+  const pct = totalTests > 0 ? Math.round((done / totalTests) * 100) : 0;
+
+  let html = `
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+      <meta charset="UTF-8">
+      <title>تقرير اختبار الوكيل العقاري الذكي</title>
+      <style>
+        * { font-family: 'Tajawal', 'Segoe UI', sans-serif; margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #f8fafc; padding: 20px; direction: rtl; }
+        .header { background: linear-gradient(135deg, #0d9488, #059669); color: white; padding: 30px; border-radius: 12px; margin-bottom: 20px; }
+        .header h1 { font-size: 24px; margin-bottom: 5px; color: white; }
+        .header p { opacity: 0.8; font-size: 14px; }
+        .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 20px; }
+        .stat { background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; text-align: center; }
+        .stat .num { font-size: 28px; font-weight: 800; }
+        .stat .label { font-size: 12px; color: #64748b; margin-top: 4px; }
+        .category { background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; margin-bottom: 15px; }
+        .category h2 { font-size: 18px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid #f1f5f9; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { background: #f1f5f9; padding: 8px 10px; text-align: right; font-weight: 700; }
+        td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; }
+        .s-pass { color: #16a34a; font-weight: 700; }
+        .s-fail { color: #dc2626; font-weight: 700; }
+        .s-skip { color: #ca8a04; font-weight: 700; }
+        .s-blocked { color: #4f46e5; font-weight: 700; }
+        .s-pending { color: #9ca3af; }
+        .footer { text-align: center; color: #94a3b8; font-size: 12px; margin-top: 20px; padding-top: 15px; border-top: 1px solid #e2e8f0; }
+        @media print { body { padding: 10px; } .header { padding: 20px; } }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1>تقرير اختبار الوكيل العقاري الذكي</h1>
+        <p>${currentRun ? currentRun.name : 'بدون جولة'} | ${new Date().toLocaleString('ar-SA')} | المختبر: ${currentUser ? currentUser.name : 'غير معروف'}</p>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><div class="num" style="color:#16a34a">${pass}</div><div class="label">نجح</div></div>
+        <div class="stat"><div class="num" style="color:#dc2626">${fail}</div><div class="label">فشل</div></div>
+        <div class="stat"><div class="num" style="color:#ca8a04">${skip}</div><div class="label">تخطي</div></div>
+        <div class="stat"><div class="num" style="color:#4f46e5">${blocked}</div><div class="label">محظور</div></div>
+        <div class="stat"><div class="num" style="color:#9ca3af">${pending}</div><div class="label">معلق</div></div>
+        <div class="stat"><div class="num" style="color:#0d9488">${pct}%</div><div class="label">مكتمل</div></div>
+      </div>
+  `;
+
+  TEST_CASES.forEach(cat => {
+    html += `
+      <div class="category">
+        <h2>${cat.icon} ${cat.name} (${cat.nameEn})</h2>
+        <table>
+          <thead><tr><th>الكود</th><th>الاختبار</th><th>الأولوية</th><th>الحالة</th><th>ملاحظات</th><th>Bug ID</th></tr></thead>
+          <tbody>
+    `;
+    cat.tests.forEach(test => {
+      const r = testResults[test.id] || {};
+      const status = r.status || 'pending';
+      const statusLabels = { pass: 'نجح', fail: 'فشل', skip: 'تخطي', blocked: 'محظور', pending: 'معلق' };
+      html += `
+        <tr>
+          <td><code>${test.id}</code></td>
+          <td>${test.title}</td>
+          <td>${test.priority}</td>
+          <td class="s-${status}">${statusLabels[status]}</td>
+          <td>${r.notes || '-'}</td>
+          <td>${r.bug_id || '-'}</td>
+        </tr>
+      `;
+    });
+    html += '</tbody></table></div>';
+  });
+
+  html += `
+      <div class="footer">
+        <p>منصة اختبار الوكيل العقاري الذكي | تم إنشاء التقرير: ${new Date().toLocaleString('ar-SA')}</p>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `test-report-${new Date().toISOString().slice(0, 10)}.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ==================== AUTH FUNCTIONS ====================
+function showStep(step) {
+  document.getElementById('step1').classList.add('hidden');
+  document.getElementById('step2').classList.add('hidden');
+  document.getElementById('step3').classList.add('hidden');
+  document.getElementById('authError').classList.add('hidden');
+  document.getElementById(`step${step}`).classList.remove('hidden');
+}
+
+function formatPhone(phone) {
+  phone = phone.replace(/[^0-9]/g, '');
+  if (phone.startsWith('05')) phone = '966' + phone.substring(1);
+  if (phone.startsWith('5') && phone.length === 9) phone = '966' + phone;
+  return phone;
+}
+
+function generateOTP() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+async function sendWhatsApp(phone, message) {
+  try {
+    await sb.rpc('send_whatsapp', { p_phone: phone, p_message: message });
+    return true;
+  } catch (e) {
+    console.error('WhatsApp send error:', e);
+    return false;
+  }
+}
+
+async function sendOTP() {
+  const phone = formatPhone(document.getElementById('phoneInput').value);
+  const name = document.getElementById('nameInput').value.trim();
+  const errEl = document.getElementById('authError');
+
+  if (!phone || phone.length < 10) {
+    errEl.textContent = 'ادخل رقم جوال صحيح';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  if (!name) {
+    errEl.textContent = 'ادخل اسمك';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  const otp = generateOTP();
+  localStorage.setItem('auth_otp', otp);
+  localStorage.setItem('auth_phone', phone);
+  localStorage.setItem('auth_name', name);
+
+  const sent = await sendWhatsApp(phone,
+    `🔑 *رمز التحقق لمنصة اختبار الوكيل العقاري الذكي*\n\nالرمز: *${otp}*\n\nصالح لمدة 5 دقائق.`
+  );
+
+  if (sent) {
+    showStep(2);
+  } else {
+    errEl.textContent = 'خطأ في ارسال الرمز، حاول مرة اخرى';
+    errEl.classList.remove('hidden');
+  }
+}
+
+async function verifyOTP() {
+  const input = document.getElementById('otpInput').value.trim();
+  const stored = localStorage.getItem('auth_otp');
+  const phone = localStorage.getItem('auth_phone');
+  const name = localStorage.getItem('auth_name');
+  const errEl = document.getElementById('authError');
+
+  if (input !== stored) {
+    errEl.textContent = 'رمز التحقق غير صحيح';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  // Check if user is already approved
+  const { data: approved } = await sb.from('approved_users')
+    .select('*').eq('phone', phone).eq('is_active', true).single();
+
+  if (approved) {
+    currentUser = { phone, name: approved.name || name };
+    localStorage.setItem('session_user', JSON.stringify(currentUser));
+    await sb.from('approved_users').update({ last_login: new Date().toISOString() }).eq('phone', phone);
+    init();
+    return;
+  }
+
+  // Create access request
+  const sessionToken = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36);
+  const { data: request, error } = await sb.from('access_requests').insert({
+    phone, name, otp_verified: true,
+    session_token: sessionToken,
+    status: 'pending'
+  }).select().single();
+
+  if (error) {
+    errEl.textContent = 'خطأ: ' + error.message;
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  // Notify admin
+  const approveUrl = `${SITE_URL}/admin.html?action=approve&id=${request.id}&token=${sessionToken}`;
+  const rejectUrl = `${SITE_URL}/admin.html?action=reject&id=${request.id}&token=${sessionToken}`;
+
+  await sendWhatsApp(ADMIN_PHONE,
+    `🔔 *طلب دخول جديد لمنصة الاختبار*\n\nالاسم: ${name}\nالرقم: ${phone}\n\n✅ قبول:\n${approveUrl}\n\n❌ رفض:\n${rejectUrl}`
+  );
+
+  showStep(3);
+  startApprovalCheck(request.id, sessionToken, phone, name);
+}
+
+function startApprovalCheck(requestId, sessionToken, phone, name) {
+  if (approvalInterval) clearInterval(approvalInterval);
+
+  approvalInterval = setInterval(async () => {
+    try {
+      const { data } = await sb.from('access_requests')
+        .select('status').eq('id', requestId).single();
+
+      if (data && data.status === 'approved') {
+        clearInterval(approvalInterval);
+        currentUser = { phone, name };
+        localStorage.setItem('session_user', JSON.stringify(currentUser));
+        init();
+      } else if (data && data.status === 'rejected') {
+        clearInterval(approvalInterval);
+        const errEl = document.getElementById('authError');
+        errEl.textContent = 'تم رفض طلب الدخول. تواصل مع المدير.';
+        errEl.classList.remove('hidden');
+        showStep(1);
+      }
+    } catch (e) {
+      console.error('Approval check error:', e);
+    }
+  }, 3000);
+}
+
+async function checkExistingSession() {
+  try {
+    const stored = localStorage.getItem('session_user');
+    if (!stored) return false;
+
+    const user = JSON.parse(stored);
+    const { data } = await sb.from('approved_users')
+      .select('*').eq('phone', user.phone).eq('is_active', true).single();
+
+    if (data) {
+      currentUser = { phone: user.phone, name: data.name || user.name };
+      localStorage.setItem('session_user', JSON.stringify(currentUser));
+      return true;
+    }
+
+    localStorage.removeItem('session_user');
+    return false;
+  } catch (e) {
+    console.error('Session check error:', e);
+    return false;
+  }
+}
+
+// ==================== STARTUP ====================
+(async () => {
+  const hasSession = await checkExistingSession();
+  if (hasSession) init();
+})();
+</script>
+</body>
+</html>
