@@ -128,7 +128,7 @@
       <div class="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 class="text-xl font-extrabold flex items-center gap-2">🏠 منصة اختبار الوكيل العقاري الذكي</h1>
-          <p class="text-teal-200 text-sm">Smart Real Estate Agent Manual Testing</p>
+          <p class="text-teal-200 text-sm">منصة الاختبار اليدوي للوكيل العقاري</p>
         </div>
         <div class="flex items-center gap-2 flex-wrap">
           <span id="connStatus" class="text-xs bg-white/10 px-3 py-1 rounded-full"></span>
@@ -220,9 +220,9 @@
         <div>
           <label class="block text-sm font-bold text-gray-600 mb-1">البيئة</label>
           <select id="runEnv" class="w-full border-2 rounded-xl px-4 py-2.5 focus:border-teal-500 focus:outline-none">
-            <option value="production">Production</option>
-            <option value="staging">Staging</option>
-            <option value="development">Development</option>
+            <option value="production">الإنتاج (النسخة الحية)</option>
+            <option value="staging">ما قبل الإطلاق</option>
+            <option value="development">بيئة التطوير</option>
           </select>
         </div>
         <div>
@@ -1293,7 +1293,7 @@ function renderCategories() {
             <span class="text-3xl">${cat.icon}</span>
             <div>
               <h3 class="font-bold text-gray-800">${cat.name}</h3>
-              <p class="text-xs text-gray-400">${cat.nameEn}</p>
+              <p class="text-xs text-gray-400">${catTotal} اختبار</p>
             </div>
           </div>
           <span class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full font-bold">${catTotal}</span>
@@ -1339,7 +1339,7 @@ function renderTestList(catId) {
           <span class="text-2xl">${cat.icon}</span>
           <div>
             <h2 class="text-xl font-bold text-gray-800">${cat.name}</h2>
-            <p class="text-sm text-gray-400">${cat.nameEn} - ${filteredTests.length} اختبار</p>
+            <p class="text-sm text-gray-400">${filteredTests.length} اختبار</p>
           </div>
         </div>
       </div>
@@ -1395,20 +1395,20 @@ function renderTestList(catId) {
             <div>
               <div class="grid grid-cols-2 gap-2 mb-2">
                 <div>
-                  <label class="block text-xs font-bold text-gray-500 mb-1">Bug ID</label>
-                  <input type="text" onblur="saveBugId('${test.id}', this.value)" value="${result.bug_id || ''}" placeholder="BUG-XXX" dir="ltr"
+                  <label class="block text-xs font-bold text-gray-500 mb-1">رقم الخطأ</label>
+                  <input type="text" onblur="saveBugId('${test.id}', this.value)" value="${result.bug_id || ''}" placeholder="خطأ-001" dir="ltr"
                     class="w-full border rounded-lg px-3 py-2 text-sm focus:border-teal-500 focus:outline-none">
                 </div>
                 <div>
-                  <label class="block text-xs font-bold text-gray-500 mb-1">Severity</label>
+                  <label class="block text-xs font-bold text-gray-500 mb-1">الخطورة</label>
                   <select onchange="saveSeverity('${test.id}', this.value)"
                     class="w-full border rounded-lg px-3 py-2 text-sm focus:border-teal-500 focus:outline-none">
                     <option value="" ${!result.severity ? 'selected' : ''}>--</option>
-                    <option value="blocker" ${result.severity === 'blocker' ? 'selected' : ''}>Blocker</option>
-                    <option value="critical" ${result.severity === 'critical' ? 'selected' : ''}>Critical</option>
-                    <option value="major" ${result.severity === 'major' ? 'selected' : ''}>Major</option>
-                    <option value="minor" ${result.severity === 'minor' ? 'selected' : ''}>Minor</option>
-                    <option value="trivial" ${result.severity === 'trivial' ? 'selected' : ''}>Trivial</option>
+                    <option value="blocker" ${result.severity === 'blocker' ? 'selected' : ''}>موقف - النظام واقف</option>
+                    <option value="critical" ${result.severity === 'critical' ? 'selected' : ''}>حرج - ميزة أساسية معطلة</option>
+                    <option value="major" ${result.severity === 'major' ? 'selected' : ''}>كبير - خلل مؤثر</option>
+                    <option value="minor" ${result.severity === 'minor' ? 'selected' : ''}>صغير - مشكلة بسيطة</option>
+                    <option value="trivial" ${result.severity === 'trivial' ? 'selected' : ''}>شكلي - ملاحظة تجميلية</option>
                   </select>
                 </div>
               </div>
@@ -1717,20 +1717,21 @@ function exportReport() {
   TEST_CASES.forEach(cat => {
     html += `
       <div class="category">
-        <h2>${cat.icon} ${cat.name} (${cat.nameEn})</h2>
+        <h2>${cat.icon} ${cat.name}</h2>
         <table>
-          <thead><tr><th>الكود</th><th>الاختبار</th><th>الأولوية</th><th>الحالة</th><th>ملاحظات</th><th>Bug ID</th></tr></thead>
+          <thead><tr><th>الكود</th><th>الاختبار</th><th>الأولوية</th><th>الحالة</th><th>ملاحظات</th><th>رقم الخطأ</th></tr></thead>
           <tbody>
     `;
     cat.tests.forEach(test => {
       const r = testResults[test.id] || {};
       const status = r.status || 'pending';
       const statusLabels = { pass: 'نجح', fail: 'فشل', skip: 'تخطي', blocked: 'محظور', pending: 'معلق' };
+      const priorityLabels = { critical: 'حرج', high: 'عالي', medium: 'متوسط', low: 'منخفض' };
       html += `
         <tr>
           <td><code>${test.id}</code></td>
           <td>${test.title}</td>
-          <td>${test.priority}</td>
+          <td>${priorityLabels[test.priority] || test.priority}</td>
           <td class="s-${status}">${statusLabels[status]}</td>
           <td>${r.notes || '-'}</td>
           <td>${r.bug_id || '-'}</td>
