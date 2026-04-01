@@ -1146,7 +1146,7 @@ async function loadRuns() {
     sel.innerHTML = '<option value="">اختر جولة اختبار...</option>';
     (data || []).forEach(run => {
       const date = new Date(run.created_at).toLocaleString('ar-SA', { dateStyle: 'short', timeStyle: 'short' });
-      sel.innerHTML += `<option value="${run.id}">${run.name} - ${date}</option>`;
+      sel.innerHTML += `<option value="${run.id}">${run.run_name} - ${date}</option>`;
     });
   } catch (e) {
     console.error('Error loading runs:', e);
@@ -1168,11 +1168,10 @@ async function createNewRun() {
 
   try {
     const { data, error } = await sb.from('test_runs').insert({
-      name,
+      run_name: name,
       environment: env,
       notes,
-      tester: currentUser ? currentUser.name : 'Unknown',
-      tester_phone: currentUser ? currentUser.phone : '',
+      tester_name: currentUser ? currentUser.name : 'Unknown',
       total_tests: TEST_CASES.reduce((sum, cat) => sum + cat.tests.length, 0),
       status: 'in_progress'
     }).select().single();
@@ -1475,21 +1474,26 @@ async function setStatus(testId, status) {
 
   try {
     const existing = testResults[testId];
+    // Find category and title for this test
+    let catId = '', testTitle = '';
+    TEST_CASES.forEach(cat => { cat.tests.forEach(t => { if (t.id === testId) { catId = cat.id; testTitle = t.title; } }); });
+
     const record = {
       run_id: currentRun.id,
       test_id: testId,
+      category: catId,
+      test_title: testTitle,
       status,
-      tester: currentUser ? currentUser.name : 'Unknown',
-      updated_at: new Date().toISOString()
+      tester_name: currentUser ? currentUser.name : 'Unknown',
+      tested_at: new Date().toISOString()
     };
 
     if (existing && existing.id) {
       const { error } = await sb.from('test_results')
-        .update(record).eq('id', existing.id);
+        .update({ status, tester_name: record.tester_name, tested_at: record.tested_at }).eq('id', existing.id);
       if (error) throw error;
       testResults[testId] = { ...existing, ...record };
     } else {
-      record.created_at = new Date().toISOString();
       const { data, error } = await sb.from('test_results')
         .insert(record).select().single();
       if (error) throw error;
@@ -1512,10 +1516,11 @@ async function saveNotes(testId, notes) {
       await sb.from('test_results').update({ notes }).eq('id', existing.id);
       testResults[testId].notes = notes;
     } else {
+      let catId = '', testTitle = '';
+      TEST_CASES.forEach(cat => { cat.tests.forEach(t => { if (t.id === testId) { catId = cat.id; testTitle = t.title; } }); });
       const { data } = await sb.from('test_results').insert({
-        run_id: currentRun.id, test_id: testId, status: 'pending', notes,
-        tester: currentUser ? currentUser.name : 'Unknown',
-        created_at: new Date().toISOString()
+        run_id: currentRun.id, test_id: testId, category: catId, test_title: testTitle, status: 'pending', notes,
+        tester_name: currentUser ? currentUser.name : 'Unknown'
       }).select().single();
       if (data) testResults[testId] = data;
     }
@@ -1530,10 +1535,11 @@ async function saveBugId(testId, bugId) {
       await sb.from('test_results').update({ bug_id: bugId }).eq('id', existing.id);
       testResults[testId].bug_id = bugId;
     } else {
+      let catId = '', testTitle = '';
+      TEST_CASES.forEach(cat => { cat.tests.forEach(t => { if (t.id === testId) { catId = cat.id; testTitle = t.title; } }); });
       const { data } = await sb.from('test_results').insert({
-        run_id: currentRun.id, test_id: testId, status: 'pending', bug_id: bugId,
-        tester: currentUser ? currentUser.name : 'Unknown',
-        created_at: new Date().toISOString()
+        run_id: currentRun.id, test_id: testId, category: catId, test_title: testTitle, status: 'pending', bug_id: bugId,
+        tester_name: currentUser ? currentUser.name : 'Unknown'
       }).select().single();
       if (data) testResults[testId] = data;
     }
@@ -1548,10 +1554,11 @@ async function saveSeverity(testId, severity) {
       await sb.from('test_results').update({ severity }).eq('id', existing.id);
       testResults[testId].severity = severity;
     } else {
+      let catId = '', testTitle = '';
+      TEST_CASES.forEach(cat => { cat.tests.forEach(t => { if (t.id === testId) { catId = cat.id; testTitle = t.title; } }); });
       const { data } = await sb.from('test_results').insert({
-        run_id: currentRun.id, test_id: testId, status: 'pending', severity,
-        tester: currentUser ? currentUser.name : 'Unknown',
-        created_at: new Date().toISOString()
+        run_id: currentRun.id, test_id: testId, category: catId, test_title: testTitle, status: 'pending', severity,
+        tester_name: currentUser ? currentUser.name : 'Unknown'
       }).select().single();
       if (data) testResults[testId] = data;
     }
@@ -1578,10 +1585,11 @@ async function uploadScreenshot(testId, input) {
       await sb.from('test_results').update({ screenshot_url: screenshotUrl }).eq('id', existing.id);
       testResults[testId].screenshot_url = screenshotUrl;
     } else {
+      let catId = '', testTitle = '';
+      TEST_CASES.forEach(cat => { cat.tests.forEach(t => { if (t.id === testId) { catId = cat.id; testTitle = t.title; } }); });
       const { data } = await sb.from('test_results').insert({
-        run_id: currentRun.id, test_id: testId, status: 'pending', screenshot_url: screenshotUrl,
-        tester: currentUser ? currentUser.name : 'Unknown',
-        created_at: new Date().toISOString()
+        run_id: currentRun.id, test_id: testId, category: catId, test_title: testTitle, status: 'pending', screenshot_url: screenshotUrl,
+        tester_name: currentUser ? currentUser.name : 'Unknown'
       }).select().single();
       if (data) testResults[testId] = data;
     }
@@ -1693,7 +1701,7 @@ function exportReport() {
     <body>
       <div class="header">
         <h1>تقرير اختبار الوكيل العقاري الذكي</h1>
-        <p>${currentRun ? currentRun.name : 'بدون جولة'} | ${new Date().toLocaleString('ar-SA')} | المختبر: ${currentUser ? currentUser.name : 'غير معروف'}</p>
+        <p>${currentRun ? currentRun.run_name : 'بدون جولة'} | ${new Date().toLocaleString('ar-SA')} | المختبر: ${currentUser ? currentUser.name : 'غير معروف'}</p>
       </div>
 
       <div class="stats">
