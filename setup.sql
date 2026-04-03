@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS test_runs (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   run_name text NOT NULL,
   tester_name text NOT NULL,
+  tester_phone text,
   app_version text DEFAULT '1.0.0',
   environment text DEFAULT 'production',
   status text DEFAULT 'in_progress' CHECK (status IN ('in_progress', 'completed', 'paused')),
