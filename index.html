@@ -49,8 +49,42 @@
       <!-- Step 1: Phone -->
       <div id="step1">
         <label class="block text-sm font-bold text-gray-600 mb-2">رقم الجوال</label>
-        <input type="tel" id="phoneInput" placeholder="966XXXXXXXXX" dir="ltr"
-          class="w-full border-2 rounded-xl px-4 py-3 text-center font-bold focus:border-teal-500 focus:outline-none mb-3">
+        <div class="flex gap-2 mb-3" dir="ltr">
+          <select id="countryCode" class="border-2 rounded-xl px-2 py-3 font-bold text-sm focus:border-teal-500 focus:outline-none bg-gray-50" style="min-width:130px">
+            <option value="966" selected>🇸🇦 +966</option>
+            <option value="971">🇦🇪 +971</option>
+            <option value="965">🇰🇼 +965</option>
+            <option value="968">🇴🇲 +968</option>
+            <option value="973">🇧🇭 +973</option>
+            <option value="974">🇶🇦 +974</option>
+            <option value="20">🇪🇬 +20</option>
+            <option value="962">🇯🇴 +962</option>
+            <option value="961">🇱🇧 +961</option>
+            <option value="964">🇮🇶 +964</option>
+            <option value="967">🇾🇪 +967</option>
+            <option value="963">🇸🇾 +963</option>
+            <option value="216">🇹🇳 +216</option>
+            <option value="213">🇩🇿 +213</option>
+            <option value="212">🇲🇦 +212</option>
+            <option value="218">🇱🇾 +218</option>
+            <option value="249">🇸🇩 +249</option>
+            <option value="252">🇸🇴 +252</option>
+            <option value="253">🇩🇯 +253</option>
+            <option value="222">🇲🇷 +222</option>
+            <option value="90">🇹🇷 +90</option>
+            <option value="92">🇵🇰 +92</option>
+            <option value="91">🇮🇳 +91</option>
+            <option value="62">🇮🇩 +62</option>
+            <option value="60">🇲🇾 +60</option>
+            <option value="44">🇬🇧 +44</option>
+            <option value="1">🇺🇸 +1</option>
+            <option value="49">🇩🇪 +49</option>
+            <option value="33">🇫🇷 +33</option>
+          </select>
+          <input type="tel" id="phoneInput" placeholder="5XXXXXXXX" maxlength="15"
+            class="flex-1 border-2 rounded-xl px-4 py-3 text-center font-bold text-lg tracking-wider focus:border-teal-500 focus:outline-none"
+            oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+        </div>
         <label class="block text-sm font-bold text-gray-600 mb-2">الاسم</label>
         <input type="text" id="nameInput" placeholder="اسمك الكامل"
           class="w-full border-2 rounded-xl px-4 py-3 text-center font-bold focus:border-teal-500 focus:outline-none mb-4">
@@ -1767,10 +1801,13 @@ function showStep(step) {
 }
 
 function formatPhone(phone) {
+  const countryCode = document.getElementById('countryCode').value;
   phone = phone.replace(/[^0-9]/g, '');
-  if (phone.startsWith('05')) phone = '966' + phone.substring(1);
-  if (phone.startsWith('5') && phone.length === 9) phone = '966' + phone;
-  return phone;
+  // إزالة الصفر البادئ إذا وجد
+  if (phone.startsWith('0')) phone = phone.substring(1);
+  // إذا الرقم يبدأ بكود الدولة بالفعل، لا نضيفه مرة ثانية
+  if (phone.startsWith(countryCode)) return phone;
+  return countryCode + phone;
 }
 
 function generateOTP() {
