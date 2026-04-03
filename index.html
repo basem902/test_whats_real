@@ -1169,17 +1169,25 @@ function populateCategoryFilter() {
 // ==================== RUNS ====================
 async function loadRuns() {
   try {
-    const { data, error } = await sb.from('test_runs')
+    let query = sb.from('test_runs')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(50);
+
+    // المدير يشوف كل الجولات، المختبر يشوف جولاته فقط
+    if (currentUser && !currentUser.is_admin) {
+      query = query.eq('tester_phone', currentUser.phone);
+    }
+
+    const { data, error } = await query;
     if (error) throw error;
 
     const sel = document.getElementById('runSelect');
     sel.innerHTML = '<option value="">اختر جولة اختبار...</option>';
     (data || []).forEach(run => {
       const date = new Date(run.created_at).toLocaleString('ar-SA', { dateStyle: 'short', timeStyle: 'short' });
-      sel.innerHTML += `<option value="${run.id}">${run.run_name} - ${date}</option>`;
+      const testerLabel = currentUser && currentUser.is_admin && run.tester_name ? ` (${run.tester_name})` : '';
+      sel.innerHTML += `<option value="${run.id}">${run.run_name}${testerLabel} - ${date}</option>`;
     });
   } catch (e) {
     console.error('Error loading runs:', e);
@@ -1205,6 +1213,7 @@ async function createNewRun() {
       environment: env,
       notes,
       tester_name: currentUser ? currentUser.name : 'Unknown',
+      tester_phone: currentUser ? currentUser.phone : '',
       total_tests: TEST_CASES.reduce((sum, cat) => sum + cat.tests.length, 0),
       status: 'in_progress'
     }).select().single();
